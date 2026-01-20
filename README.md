@@ -23,6 +23,10 @@ packages/shared 共享类型与 schema
 ## 数据源映射
 
 详见 `docs/data-sources.md`。
+
+## 观测与重试
+
+日志默认写入 `apps/api/data/api.log`，HTTP 请求重试次数与退避时间可在 `apps/api/.env.example` 中调整。
 ```
 
 ## API 列表

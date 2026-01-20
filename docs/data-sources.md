@@ -101,7 +101,7 @@
 - `value` / `rate` -> `macro.value`
 - `tenor` -> `series_id`（如 `HKMA_HIBOR_1M`）
 
-> HKMA API 的 dataset/table 命名以目录为准；测试期在配置中指定具体 URL。
+> HKMA API 的 dataset/table 命名以目录为准；测试期在配置中指定具体 URL。\n+\n详细表名清单与待确认项见 `docs/hkma-endpoints.md`。
 
 ## 6) FRED（宏观/利率/贵金属）
 

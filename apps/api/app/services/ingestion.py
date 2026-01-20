@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
 from typing import Iterable
 
 from ..config import AppConfig
@@ -15,8 +17,11 @@ from ..sources.rss import fetch_rss_events
 from ..sources.treasury import fetch_treasury_events
 from .seed import HOT_TAGS, build_seed_events
 
+logger = logging.getLogger("ingestion")
+
 
 async def refresh_store(store: InMemoryStore, config: AppConfig) -> None:
+    started = time.perf_counter()
     seeded = build_seed_events()
     live_events: list[Event] = []
 
@@ -39,13 +44,36 @@ async def refresh_store(store: InMemoryStore, config: AppConfig) -> None:
 
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            for result in results:
+            source_names = [
+                name
+                for name, enabled in [
+                    ("rss", config.enable_rss),
+                    ("edgar", config.enable_edgar),
+                    ("h10", config.enable_h10),
+                    ("treasury", config.enable_treasury),
+                    ("fred", config.enable_fred),
+                    ("hkex", config.enable_hkex),
+                    ("hkma", config.enable_hkma),
+                ]
+                if enabled
+            ]
+            for name, result in zip(source_names, results):
                 if isinstance(result, Exception):
+                    logger.warning("source_failed source=%s error=%s", name, result)
                     continue
+                logger.info("source_loaded source=%s count=%s", name, len(result))
                 live_events.extend(result)
 
     events = dedupe_events([*live_events, *seeded])
     store.replace_events(events)
+    duration = time.perf_counter() - started
+    logger.info(
+        "refresh_complete total=%s live=%s seeded=%s duration=%.2fs",
+        len(events),
+        len(live_events),
+        len(seeded),
+        duration,
+    )
 
 
 def dedupe_events(events: Iterable[Event]) -> list[Event]:

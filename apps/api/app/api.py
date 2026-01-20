@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+import logging
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -10,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import AppConfig
+from .logging import setup_logging
 from .models import (
     DashboardSummary,
     Event,
@@ -33,6 +35,9 @@ ASSET_MARKET_MAP = {item["id"]: item["market"] for item in ASSET_CATALOG}
 
 def create_app() -> FastAPI:
     config = AppConfig.from_env()
+    setup_logging(config)
+    logger = logging.getLogger("api")
+    logger.info("api_startup timezone=%s", config.timezone)
     app = FastAPI(title="Market Intel API", version="0.1.0")
     app.add_middleware(
         CORSMiddleware,

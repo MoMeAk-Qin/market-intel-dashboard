@@ -3,10 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import logging
 import httpx
 
 from ..config import AppConfig
 from ..models import Event, EventEvidence, EventNumber
+from ..services.http_client import request_with_retry
+
+logger = logging.getLogger("source.hkma")
 
 DATE_KEYS = ("date", "time_period", "end_of_day", "ref_date")
 VALUE_KEYS = ("value", "rate", "closing_rate", "mid_rate")
@@ -16,11 +20,22 @@ async def fetch_hkma_events(config: AppConfig) -> list[Event]:
     if not config.hkma_endpoints:
         return []
     headers = {"User-Agent": config.user_agent}
-    timeout = httpx.Timeout(12.0, read=12.0)
+    timeout = httpx.Timeout(config.http_timeout, read=config.http_timeout)
     events: list[Event] = []
     async with httpx.AsyncClient(headers=headers, timeout=timeout) as client:
         for endpoint in config.hkma_endpoints:
-            response = await client.get(endpoint)
+            try:
+                response = await request_with_retry(
+                    client,
+                    "GET",
+                    endpoint,
+                    retries=config.http_retries,
+                    backoff=config.http_backoff,
+                    logger=logger,
+                )
+            except Exception as exc:
+                logger.warning("hkma_fetch_failed endpoint=%s error=%s", endpoint, exc)
+                continue
             if response.status_code >= 400:
                 continue
             payload = response.json()

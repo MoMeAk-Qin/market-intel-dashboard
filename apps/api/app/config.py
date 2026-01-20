@@ -61,6 +61,11 @@ class AppConfig:
     hkex_max_items: int
     hkma_endpoints: tuple[str, ...]
     hkma_max_fields: int
+    log_level: str
+    log_file: str
+    http_timeout: float
+    http_retries: int
+    http_backoff: float
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -116,4 +121,9 @@ class AppConfig:
             hkex_max_items=int(os.getenv("HKEX_MAX_ITEMS", "20")),
             hkma_endpoints=_get_list(os.getenv("HKMA_ENDPOINTS")),
             hkma_max_fields=int(os.getenv("HKMA_MAX_FIELDS", "6")),
+            log_level=os.getenv("LOG_LEVEL", "INFO"),
+            log_file=os.getenv("LOG_FILE", "apps/api/data/api.log"),
+            http_timeout=float(os.getenv("HTTP_TIMEOUT", "12")),
+            http_retries=int(os.getenv("HTTP_RETRIES", "2")),
+            http_backoff=float(os.getenv("HTTP_BACKOFF", "0.6")),
         )

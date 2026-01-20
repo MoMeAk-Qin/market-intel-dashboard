@@ -3,10 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import logging
 import httpx
 
 from ..config import AppConfig
 from ..models import Event, EventEvidence, EventNumber
+from ..services.http_client import request_with_retry
+
+logger = logging.getLogger("source.fred")
 
 RATE_SERIES = {"DGS10", "DGS2", "DGS1MO", "FEDFUNDS"}
 METAL_SERIES = {"GOLDAMGBD228NLBM"}
@@ -16,7 +20,7 @@ async def fetch_fred_events(config: AppConfig) -> list[Event]:
     if not config.fred_api_key or not config.fred_series:
         return []
     headers = {"User-Agent": config.user_agent}
-    timeout = httpx.Timeout(12.0, read=12.0)
+    timeout = httpx.Timeout(config.http_timeout, read=config.http_timeout)
     events: list[Event] = []
     async with httpx.AsyncClient(headers=headers, timeout=timeout) as client:
         for series_id in config.fred_series:
@@ -24,7 +28,18 @@ async def fetch_fred_events(config: AppConfig) -> list[Event]:
                 "https://api.stlouisfed.org/fred/series/observations"
                 f"?series_id={series_id}&api_key={config.fred_api_key}&file_type=json"
             )
-            response = await client.get(url)
+            try:
+                response = await request_with_retry(
+                    client,
+                    "GET",
+                    url,
+                    retries=config.http_retries,
+                    backoff=config.http_backoff,
+                    logger=logger,
+                )
+            except Exception as exc:
+                logger.warning("fred_fetch_failed series=%s error=%s", series_id, exc)
+                continue
             if response.status_code >= 400:
                 continue
             payload = response.json()

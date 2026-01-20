@@ -5,10 +5,14 @@ import io
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import logging
 import httpx
 
 from ..config import AppConfig
 from ..models import Event, EventEvidence, EventNumber
+from ..services.http_client import request_with_retry
+
+logger = logging.getLogger("source.treasury")
 
 TENOR_MAP = {
     "1 Mo": "UST_1M",
@@ -27,9 +31,20 @@ TENOR_MAP = {
 
 async def fetch_treasury_events(config: AppConfig) -> list[Event]:
     headers = {"User-Agent": config.user_agent}
-    timeout = httpx.Timeout(12.0, read=12.0)
+    timeout = httpx.Timeout(config.http_timeout, read=config.http_timeout)
     async with httpx.AsyncClient(headers=headers, timeout=timeout) as client:
-        response = await client.get(config.treasury_url)
+        try:
+            response = await request_with_retry(
+                client,
+                "GET",
+                config.treasury_url,
+                retries=config.http_retries,
+                backoff=config.http_backoff,
+                logger=logger,
+            )
+        except Exception as exc:
+            logger.warning("treasury_fetch_failed error=%s", exc)
+            return []
         if response.status_code >= 400:
             return []
         rows = list(csv.DictReader(io.StringIO(response.text)))

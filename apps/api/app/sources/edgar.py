@@ -4,10 +4,14 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+import logging
 import httpx
 
 from ..config import AppConfig
 from ..models import Event, EventEvidence
+from ..services.http_client import request_with_retry
+
+logger = logging.getLogger("source.edgar")
 
 FORM_EARNINGS = {"10-K", "10-Q", "20-F", "40-F"}
 FORM_REGULATORY = {"8-K", "6-K"}
@@ -21,9 +25,9 @@ async def fetch_edgar_events(config: AppConfig) -> list[Event]:
     if not tickers:
         return []
     headers = {"User-Agent": config.user_agent}
-    timeout = httpx.Timeout(12.0, read=12.0)
+    timeout = httpx.Timeout(config.http_timeout, read=config.http_timeout)
     async with httpx.AsyncClient(headers=headers, timeout=timeout) as client:
-        mapping = await _fetch_cik_map(client, config.edgar_ticker_map_url)
+        mapping = await _fetch_cik_map(client, config)
         if not mapping:
             return []
         events: list[Event] = []
@@ -31,16 +35,28 @@ async def fetch_edgar_events(config: AppConfig) -> list[Event]:
             cik = mapping.get(ticker.upper())
             if not cik:
                 continue
-            submissions = await _fetch_submissions(client, cik)
+            submissions = await _fetch_submissions(client, config, cik)
             if not submissions:
                 continue
             events.extend(_build_events_from_submissions(ticker, cik, submissions, config))
         return events
 
 
-async def _fetch_cik_map(client: httpx.AsyncClient, url: str) -> dict[str, str]:
-    response = await client.get(url)
+async def _fetch_cik_map(client: httpx.AsyncClient, config: AppConfig) -> dict[str, str]:
+    try:
+        response = await request_with_retry(
+            client,
+            "GET",
+            config.edgar_ticker_map_url,
+            retries=config.http_retries,
+            backoff=config.http_backoff,
+            logger=logger,
+        )
+    except Exception as exc:
+        logger.warning("edgar_cik_map_failed error=%s", exc)
+        return {}
     if response.status_code >= 400:
+        logger.warning("edgar_cik_map_status status=%s", response.status_code)
         return {}
     payload = response.json()
     mapping: dict[str, str] = {}
@@ -72,10 +88,24 @@ async def _fetch_cik_map(client: httpx.AsyncClient, url: str) -> dict[str, str]:
     return mapping
 
 
-async def _fetch_submissions(client: httpx.AsyncClient, cik: str) -> dict[str, Any] | None:
+async def _fetch_submissions(
+    client: httpx.AsyncClient, config: AppConfig, cik: str
+) -> dict[str, Any] | None:
     url = f"https://data.sec.gov/submissions/CIK{cik}.json"
-    response = await client.get(url)
+    try:
+        response = await request_with_retry(
+            client,
+            "GET",
+            url,
+            retries=config.http_retries,
+            backoff=config.http_backoff,
+            logger=logger,
+        )
+    except Exception as exc:
+        logger.warning("edgar_submission_failed cik=%s error=%s", cik, exc)
+        return None
     if response.status_code >= 400:
+        logger.warning("edgar_submission_status cik=%s status=%s", cik, response.status_code)
         return None
     return response.json()
 

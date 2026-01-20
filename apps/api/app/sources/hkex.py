@@ -7,10 +7,14 @@ from typing import Iterable
 from urllib.parse import urljoin
 from uuid import uuid4
 
+import logging
 import httpx
 
 from ..config import AppConfig
 from ..models import Event, EventEvidence
+from ..services.http_client import request_with_retry
+
+logger = logging.getLogger("source.hkex")
 
 
 @dataclass
@@ -74,9 +78,21 @@ class HKEXTableParser(HTMLParser):
 
 async def fetch_hkex_events(config: AppConfig) -> list[Event]:
     headers = {"User-Agent": config.user_agent}
-    timeout = httpx.Timeout(12.0, read=12.0)
+    timeout = httpx.Timeout(config.http_timeout, read=config.http_timeout)
     async with httpx.AsyncClient(headers=headers, timeout=timeout) as client:
-        response = await client.get(config.hkex_search_url, params=config.hkex_search_params)
+        try:
+            response = await request_with_retry(
+                client,
+                "GET",
+                config.hkex_search_url,
+                retries=config.http_retries,
+                backoff=config.http_backoff,
+                logger=logger,
+                params=config.hkex_search_params,
+            )
+        except Exception as exc:
+            logger.warning("hkex_fetch_failed error=%s", exc)
+            return []
         if response.status_code >= 400:
             return []
         parser = HKEXTableParser()

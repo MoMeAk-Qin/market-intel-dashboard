@@ -50,6 +50,11 @@
 - **实现**：APScheduler + CronTrigger
 - **幂等性**：按 source_id/发布时间/标题 hash 去重
 
+## 可观测性与重试
+
+- 统一日志输出到 `apps/api/data/api.log`
+- HTTP 请求带指数退避重试（可配置）
+
 ## API 设计（与前端对齐）
 
 - `GET /health`

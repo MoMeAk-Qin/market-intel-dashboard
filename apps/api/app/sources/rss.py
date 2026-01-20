@@ -4,28 +4,33 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import asyncio
+import logging
 import feedparser
 import httpx
 
 from ..config import AppConfig
 from ..models import Event, EventEvidence
+from ..services.http_client import request_with_retry
+
+logger = logging.getLogger("source.rss")
 
 
 async def fetch_rss_events(config: AppConfig) -> list[Event]:
     if not config.rss_feeds:
         return []
     headers = {"User-Agent": config.user_agent}
-    timeout = httpx.Timeout(10.0, read=10.0)
+    timeout = httpx.Timeout(config.http_timeout, read=config.http_timeout)
     events: list[Event] = []
     async with httpx.AsyncClient(headers=headers, timeout=timeout) as client:
-        tasks = [client.get(feed_url) for feed_url in config.rss_feeds]
+        tasks = [
+            _fetch_feed(client, feed_url, config)
+            for feed_url in config.rss_feeds
+        ]
         responses = await asyncio.gather(*tasks, return_exceptions=True)
-        for response in responses:
-            if isinstance(response, Exception):
+        for text in responses:
+            if isinstance(text, Exception) or not text:
                 continue
-            if response.status_code >= 400:
-                continue
-            parsed = feedparser.parse(response.text)
+            parsed = feedparser.parse(text)
             for entry in parsed.entries[:20]:
                 published = _parse_published(entry)
                 headline = entry.get("title", "")
@@ -64,6 +69,27 @@ async def fetch_rss_events(config: AppConfig) -> list[Event]:
                     )
                 )
     return events
+
+
+async def _fetch_feed(
+    client: httpx.AsyncClient, url: str, config: AppConfig
+) -> str | None:
+    try:
+        response = await request_with_retry(
+            client,
+            "GET",
+            url,
+            retries=config.http_retries,
+            backoff=config.http_backoff,
+            logger=logger,
+        )
+        if response.status_code >= 400:
+            logger.warning("rss_fetch_failed url=%s status=%s", url, response.status_code)
+            return None
+        return response.text
+    except Exception as exc:
+        logger.warning("rss_fetch_error url=%s error=%s", url, exc)
+        return None
 
 
 def _parse_published(entry: dict) -> datetime:
