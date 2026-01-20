@@ -46,3 +46,7 @@ https://api.hkma.gov.hk/public/market-data-and-statistics/<dataset>/<table2>?for
 - USD/HKD 参考汇率表名
 - Exchange Fund Bills/Notes 收益率表名
 - Aggregate Balance/资金面指标表名
+
+## 待办事项
+
+- 确认 HKMA 的具体 dataset/table 名称（见本文件）。确认后写入 `HKMA_ENDPOINTS` 并进行字段映射微调。

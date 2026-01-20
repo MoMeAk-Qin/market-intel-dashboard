@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Communication
-- 永远使用简体中文进行对话
+- 永远使用简体中文进行对话和思考
 
 ## Documentation
 - 编写.md文档时，也使用中文
