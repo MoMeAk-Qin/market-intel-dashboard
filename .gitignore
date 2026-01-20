@@ -1,0 +1,12 @@
+node_modules
+.DS_Store
+.corepack
+.env
+.env.local
+.env.*.local
+.next
+dist
+pnpm-debug.log
+apps/web/.next
+apps/web/out
+apps/api/dist

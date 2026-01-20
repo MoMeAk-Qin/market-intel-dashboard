@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --radius: 0.75rem;
+}
+
+body {
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  background: radial-gradient(circle at 10% 10%, rgba(236, 252, 255, 0.6), transparent 45%),
+    radial-gradient(circle at 90% 0%, rgba(254, 243, 199, 0.6), transparent 40%),
+    linear-gradient(180deg, #f8fafc 0%, #ffffff 55%, #f1f5f9 100%);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-serif), ui-serif, Georgia, serif;
+}
+
+.fade-up {
+  animation: fade-up 500ms ease-out both;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

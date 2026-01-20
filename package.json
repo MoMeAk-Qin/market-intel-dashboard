@@ -1,0 +1,21 @@
+{
+  "name": "market-intel-dashboard",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c blue,green \"pnpm -C apps/api dev\" \"pnpm -C apps/web dev\"",
+    "dev:api": "pnpm -C apps/api dev",
+    "dev:web": "pnpm -C apps/web dev",
+    "lint": "eslint . --ext .ts,.tsx",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "concurrently": "^9.0.1",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "^15.0.3",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3"
+  }
+}
