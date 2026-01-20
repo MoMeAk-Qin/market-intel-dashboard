@@ -9,6 +9,8 @@ from ..state import InMemoryStore
 from ..sources.edgar import fetch_edgar_events
 from ..sources.fred import fetch_fred_events
 from ..sources.h10 import fetch_h10_events
+from ..sources.hkex import fetch_hkex_events
+from ..sources.hkma import fetch_hkma_events
 from ..sources.rss import fetch_rss_events
 from ..sources.treasury import fetch_treasury_events
 from .seed import HOT_TAGS, build_seed_events
@@ -30,6 +32,10 @@ async def refresh_store(store: InMemoryStore, config: AppConfig) -> None:
             tasks.append(fetch_treasury_events(config))
         if config.enable_fred:
             tasks.append(fetch_fred_events(config))
+        if config.enable_hkex:
+            tasks.append(fetch_hkex_events(config))
+        if config.enable_hkma:
+            tasks.append(fetch_hkma_events(config))
 
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)

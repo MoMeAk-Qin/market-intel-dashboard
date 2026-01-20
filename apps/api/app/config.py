@@ -15,6 +15,18 @@ def _get_list(value: str | None) -> tuple[str, ...]:
         return tuple()
     return tuple(item.strip() for item in value.split(",") if item.strip())
 
+def _get_map(value: str | None) -> dict[str, str]:
+    if not value:
+        return {}
+    pairs = (item.strip() for item in value.split(",") if item.strip())
+    mapping: dict[str, str] = {}
+    for pair in pairs:
+        if "=" not in pair:
+            continue
+        key, val = pair.split("=", 1)
+        mapping[key.strip()] = val.strip()
+    return mapping
+
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -29,6 +41,8 @@ class AppConfig:
     enable_h10: bool
     enable_treasury: bool
     enable_fred: bool
+    enable_hkex: bool
+    enable_hkma: bool
     rss_feeds: tuple[str, ...]
     market_symbols: tuple[str, ...]
     user_agent: str
@@ -41,6 +55,12 @@ class AppConfig:
     treasury_url: str
     fred_api_key: str
     fred_series: tuple[str, ...]
+    hkex_search_url: str
+    hkex_base_url: str
+    hkex_search_params: dict[str, str]
+    hkex_max_items: int
+    hkma_endpoints: tuple[str, ...]
+    hkma_max_fields: int
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -56,6 +76,8 @@ class AppConfig:
             enable_h10=_get_bool(os.getenv("ENABLE_H10"), True),
             enable_treasury=_get_bool(os.getenv("ENABLE_TREASURY"), True),
             enable_fred=_get_bool(os.getenv("ENABLE_FRED"), True),
+            enable_hkex=_get_bool(os.getenv("ENABLE_HKEX"), False),
+            enable_hkma=_get_bool(os.getenv("ENABLE_HKMA"), False),
             rss_feeds=_get_list(os.getenv("RSS_FEEDS")),
             market_symbols=_get_list(os.getenv("MARKET_SYMBOLS")),
             user_agent=os.getenv(
@@ -80,4 +102,18 @@ class AppConfig:
             ),
             fred_api_key=os.getenv("FRED_API_KEY", ""),
             fred_series=_get_list(os.getenv("FRED_SERIES", "DGS10,DGS2,FEDFUNDS,GOLDAMGBD228NLBM")),
+            hkex_search_url=os.getenv(
+                "HKEX_SEARCH_URL",
+                "https://www1.hkexnews.hk/search/titleSearchServlet.do",
+            ),
+            hkex_base_url=os.getenv("HKEX_BASE_URL", "https://www1.hkexnews.hk"),
+            hkex_search_params=_get_map(
+                os.getenv(
+                    "HKEX_SEARCH_PARAMS",
+                    "lang=en,category=0,market=SEHK,searchType=1",
+                )
+            ),
+            hkex_max_items=int(os.getenv("HKEX_MAX_ITEMS", "20")),
+            hkma_endpoints=_get_list(os.getenv("HKMA_ENDPOINTS")),
+            hkma_max_fields=int(os.getenv("HKMA_MAX_FIELDS", "6")),
         )
