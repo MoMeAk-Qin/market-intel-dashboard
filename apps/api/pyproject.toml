@@ -2,7 +2,7 @@
 name = "market-intel-api"
 version = "0.1.0"
 description = "Market intelligence API (free-source test edition)"
-requires-python = ">=3.11"
+requires-python = ">=3.12,<3.13"
 dependencies = [
   "fastapi>=0.115.2",
   "uvicorn>=0.30.6",
@@ -10,6 +10,10 @@ dependencies = [
   "feedparser>=6.0.11",
   "apscheduler>=3.10.4",
   "pydantic>=2.9.2",
+  "openai>=1.60.0",
+  "chromadb>=0.5.0",
+  "dashscope>=1.20.0",
+  "pytest>=8.3.0",
 ]
 
 [tool.uv]

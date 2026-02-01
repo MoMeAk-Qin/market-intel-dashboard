@@ -15,6 +15,7 @@ def _get_list(value: str | None) -> tuple[str, ...]:
         return tuple()
     return tuple(item.strip() for item in value.split(",") if item.strip())
 
+
 def _get_map(value: str | None) -> dict[str, str]:
     if not value:
         return {}
@@ -66,6 +67,16 @@ class AppConfig:
     http_timeout: float
     http_retries: int
     http_backoff: float
+    dashscope_api_key: str
+    qwen_base_url: str
+    qwen_model: str
+    qwen_temperature: float
+    qwen_max_tokens: int
+    enable_vector_store: bool
+    chroma_path: str
+    chroma_collection_sources: str
+    dashscope_embeddings_model: str
+    analysis_top_k: int
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -126,4 +137,17 @@ class AppConfig:
             http_timeout=float(os.getenv("HTTP_TIMEOUT", "12")),
             http_retries=int(os.getenv("HTTP_RETRIES", "2")),
             http_backoff=float(os.getenv("HTTP_BACKOFF", "0.6")),
+            dashscope_api_key=os.getenv("DASHSCOPE_API_KEY", ""),
+            qwen_base_url=os.getenv(
+                "QWEN_BASE_URL",
+                "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            ),
+            qwen_model=os.getenv("QWEN_MODEL", "qwen3-max"),
+            qwen_temperature=float(os.getenv("QWEN_TEMPERATURE", "0.2")),
+            qwen_max_tokens=int(os.getenv("QWEN_MAX_TOKENS", "512")),
+            enable_vector_store=_get_bool(os.getenv("ENABLE_VECTOR_STORE"), True),
+            chroma_path=os.getenv("CHROMA_PATH", "apps/api/data/chroma"),
+            chroma_collection_sources=os.getenv("CHROMA_COLLECTION_SOURCES", "sources"),
+            dashscope_embeddings_model=os.getenv("DASHSCOPE_EMBEDDINGS_MODEL", "text-embedding-v4"),
+            analysis_top_k=int(os.getenv("ANALYSIS_TOP_K", "6")),
         )

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import logging
-from typing import Literal
+from typing import Awaitable, Callable, Literal
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -15,10 +15,16 @@ from .logging import setup_logging
 from .models import (
     DashboardSummary,
     Event,
+    EventEvidence,
     KPI,
     KeyAsset,
     PaginatedEvents,
     QAResponse,
+    AnalysisRequest,
+    AnalysisResponse,
+    DailyNewsResponse,
+    DailySummaryRequest,
+    DailySummaryResponse,
     ResearchResponse,
     TimelineLane,
     EarningsCard,
@@ -28,6 +34,8 @@ from .models import (
 )
 from .state import InMemoryStore
 from .services.ingestion import hot_tags, refresh_store
+from .services.analysis import analyze_financial_sources
+from .services.vector_store import EmbeddingsUnavailable, VectorStore, VectorStoreDisabled
 from .services.seed import ASSET_CATALOG, build_asset_series
 
 ASSET_MARKET_MAP = {item["id"]: item["market"] for item in ASSET_CATALOG}
@@ -50,10 +58,31 @@ def create_app() -> FastAPI:
     store = InMemoryStore()
     scheduler = AsyncIOScheduler(timezone=ZoneInfo(config.timezone))
 
+    vector_store: VectorStore | None = None
+    try:
+        vector_store = VectorStore(config)
+        logger.info("vector_store_enabled path=%s collection=%s", config.chroma_path, config.chroma_collection_sources)
+    except VectorStoreDisabled:
+        logger.info("vector_store_disabled")
+    except Exception as exc:
+        logger.warning("vector_store_init_failed error=%s", exc)
+        vector_store = None
+
+    async def refresh_and_index() -> None:
+        await refresh_store(store, config)
+        if not vector_store:
+            return
+        try:
+            vector_store.upsert_events(store.events)
+        except EmbeddingsUnavailable as exc:
+            logger.warning("vector_store_embeddings_unavailable error=%s", exc)
+        except Exception as exc:
+            logger.warning("vector_store_index_failed error=%s", exc)
+
     @app.on_event("startup")
     async def startup() -> None:
-        await refresh_store(store, config)
-        _schedule_jobs(scheduler, store, config)
+        await refresh_and_index()
+        _schedule_jobs(scheduler, config, refresh_and_index)
         scheduler.start()
 
     @app.on_event("shutdown")
@@ -212,23 +241,127 @@ def create_app() -> FastAPI:
         evidence = picked.evidence if picked else store.events[0].evidence
         return QAResponse(answer=answer, evidence=evidence)
 
+    @app.post("/analysis", response_model=AnalysisResponse)
+    async def analyze(payload: AnalysisRequest) -> AnalysisResponse:
+        try:
+            return analyze_financial_sources(payload, config, vector_store)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail="Analysis failed") from exc
+
+    @app.get("/news/today", response_model=DailyNewsResponse)
+    async def news_today(
+        market: str | None = None,
+        tickers: str | None = None,
+        q: str | None = None,
+        limit: int = 30,
+        sort: Literal["time", "impact"] = "time",
+    ) -> DailyNewsResponse:
+        tz = ZoneInfo(config.timezone)
+        markets = _split_csv(market)
+        ticker_list = _split_csv(tickers)
+        limit = max(5, min(limit, 50))
+        items = _filter_today_news(
+            store.events,
+            tz,
+            markets=markets,
+            tickers=ticker_list,
+            query=q,
+        )
+        if sort == "impact":
+            items = sorted(items, key=lambda item: (item.impact, item.event_time), reverse=True)
+        items = items[:limit]
+        today = datetime.now(tz).date()
+        return DailyNewsResponse(date=today, items=items, total=len(items))
+
+    @app.post("/daily/summary", response_model=DailySummaryResponse)
+    async def daily_summary(payload: DailySummaryRequest) -> DailySummaryResponse:
+        tz = ZoneInfo(config.timezone)
+        items = _filter_today_news(
+            store.events,
+            tz,
+            markets=payload.markets,
+            tickers=payload.tickers,
+            query=payload.query,
+        )
+        items = items[: payload.limit]
+        today = datetime.now(tz).date()
+        evidence = _collect_evidence(items, limit=12)
+        if not items:
+            return DailySummaryResponse(
+                date=today,
+                answer="今日暂无符合条件的新闻。",
+                model=config.qwen_model,
+                total_news=0,
+                usage=None,
+                sources=[],
+            )
+
+        sources_text = [
+            f"{item.publisher} | {item.headline} | {item.evidence[0].source_url if item.evidence else ''}"
+            for item in items
+        ]
+        context_lines = [
+            f"- {_to_tz(item.event_time, tz).isoformat()} | {item.publisher} | {item.headline} | {item.summary}"
+            for item in items
+        ]
+        question = payload.focus or "请根据以下新闻生成今日摘要，给出重点、影响、风险与关注点。"
+
+        analysis_payload = AnalysisRequest(
+            question=question,
+            context="今日新闻列表：\n" + "\n".join(context_lines),
+            sources=sources_text,
+            use_retrieval=payload.use_retrieval,
+            top_k=payload.top_k,
+        )
+        try:
+            analysis = analyze_financial_sources(analysis_payload, config, vector_store)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail="Daily summary failed") from exc
+
+        return DailySummaryResponse(
+            date=today,
+            answer=analysis.answer,
+            model=analysis.model,
+            total_news=len(items),
+            usage=analysis.usage,
+            sources=evidence,
+        )
+
+    @app.post("/admin/refresh")
+    async def admin_refresh() -> dict[str, object]:
+        try:
+            await refresh_and_index()
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail="Refresh failed") from exc
+        return {
+            "ok": True,
+            "updated_at": store.updated_at,
+            "total_events": len(store.events),
+        }
+
     return app
 
 
-def _schedule_jobs(scheduler: AsyncIOScheduler, store: InMemoryStore, config: AppConfig) -> None:
+def _schedule_jobs(
+    scheduler: AsyncIOScheduler,
+    config: AppConfig,
+    refresh_job: Callable[[], Awaitable[None]],
+) -> None:
     morning_hour, morning_minute = _parse_clock(config.schedule_morning)
     evening_hour, evening_minute = _parse_clock(config.schedule_evening)
     scheduler.add_job(
-        refresh_store,
+        refresh_job,
         CronTrigger(hour=morning_hour, minute=morning_minute),
-        kwargs={"store": store, "config": config},
         id="refresh-morning",
         replace_existing=True,
     )
     scheduler.add_job(
-        refresh_store,
+        refresh_job,
         CronTrigger(hour=evening_hour, minute=evening_minute),
-        kwargs={"store": store, "config": config},
         id="refresh-evening",
         replace_existing=True,
     )
@@ -310,7 +443,7 @@ def filter_events(
                 continue
         filtered.append(event)
 
-    return sorted(filtered, key=lambda item: item.event_time, reverse=True)
+    return sorted(filtered, key=lambda item: _to_tz(item.event_time, tz), reverse=True)
 
 
 def _parse_date(value: str) -> date:
@@ -346,3 +479,66 @@ def _map_lane(event: Event) -> str:
     if event.event_type in {"earnings", "guidance", "buyback", "mna"}:
         return "company"
     return "industry"
+
+
+def _split_csv(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _to_tz(dt: datetime, tz: ZoneInfo) -> datetime:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(tz)
+
+
+def _filter_today_news(
+    events: list[Event],
+    tz: ZoneInfo,
+    *,
+    markets: list[str] | None,
+    tickers: list[str] | None,
+    query: str | None,
+) -> list[Event]:
+    now = datetime.now(tz)
+    start = datetime(now.year, now.month, now.day, tzinfo=tz)
+    end = start + timedelta(days=1)
+    keyword = query.lower().strip() if query else None
+
+    filtered: list[Event] = []
+    for event in events:
+        if event.source_type != "news":
+            continue
+        event_time = _to_tz(event.event_time, tz)
+        if not (start <= event_time < end):
+            continue
+        if markets:
+            if not any(market in event.markets for market in markets):
+                continue
+        if tickers:
+            if not any(ticker in event.tickers for ticker in tickers):
+                continue
+        if keyword:
+            haystack = " ".join(
+                [event.headline, event.summary, event.publisher, " ".join(event.tickers)]
+            ).lower()
+            if keyword not in haystack:
+                continue
+        filtered.append(event)
+
+    return sorted(filtered, key=lambda item: item.event_time, reverse=True)
+
+
+def _collect_evidence(items: list[Event], *, limit: int) -> list[EventEvidence]:
+    evidence: list[EventEvidence] = []
+    seen: set[str] = set()
+    for event in items:
+        for ev in event.evidence:
+            if ev.quote_id in seen:
+                continue
+            seen.add(ev.quote_id)
+            evidence.append(ev)
+            if len(evidence) >= limit:
+                return evidence
+    return evidence

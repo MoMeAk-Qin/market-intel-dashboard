@@ -15,3 +15,5 @@ __pycache__/
 *.pyc
 .venv/
 prompt.md
+AGENT.md
+AGENTS.md

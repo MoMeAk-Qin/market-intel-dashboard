@@ -4,6 +4,8 @@
 
 ## 快速开始
 
+> 推荐 Python 3.12（本项目依赖 ChromaDB，当前与 Python 3.12 兼容性最佳）
+
 ```bash
 pnpm i
 uv sync --project apps/api
@@ -38,12 +40,23 @@ packages/shared 共享类型与 schema
 - `GET /assets/:assetId/chart?range=1D|1W|1M|1Y`
 - `GET /assets/:assetId/events?range=1D|1W|1M|1Y`
 - `GET /research/company/:ticker`
+- `GET /news/today`
 - `POST /qa`
+- `POST /analysis`
+- `POST /daily/summary`
+- `POST /admin/refresh`
 
 ## 环境变量
 
 - `apps/web/.env.example`
 - `apps/api/.env.example`
+
+### `/analysis`（检索增强信源分析）
+
+- LLM：默认使用 DashScope 的 OpenAI 兼容模式调用 Qwen（需 `DASHSCOPE_API_KEY`）
+- 检索增强：默认启用 Chroma 本地向量库（目录 `apps/api/data/chroma`）
+  - Embedding 使用 DashScope 文本向量（默认 `text-embedding-v4`，需 `DASHSCOPE_API_KEY`）
+  - 若未配置 `DASHSCOPE_API_KEY`，`/analysis` 将直接报错（无法调用 LLM/embedding）
 
 ## 数据更新策略
 

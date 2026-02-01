@@ -71,6 +71,52 @@ class QAResponse(BaseModel):
     evidence: list[EventEvidence]
 
 
+class AnalysisRequest(BaseModel):
+    question: str
+    context: str | None = None
+    sources: list[str] = Field(default_factory=list)
+    use_retrieval: bool = True
+    top_k: int = Field(default=6, ge=1, le=20)
+
+
+class AnalysisUsage(BaseModel):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
+class AnalysisResponse(BaseModel):
+    answer: str
+    model: str
+    usage: AnalysisUsage | None = None
+    sources: list[EventEvidence] = Field(default_factory=list)
+
+
+class DailyNewsResponse(BaseModel):
+    date: date
+    items: list[Event]
+    total: int
+
+
+class DailySummaryRequest(BaseModel):
+    focus: str | None = None
+    markets: list[str] = Field(default_factory=list)
+    tickers: list[str] = Field(default_factory=list)
+    query: str | None = None
+    limit: int = Field(default=20, ge=1, le=50)
+    use_retrieval: bool = True
+    top_k: int = Field(default=6, ge=1, le=20)
+
+
+class DailySummaryResponse(BaseModel):
+    date: date
+    answer: str
+    model: str
+    total_news: int
+    usage: AnalysisUsage | None = None
+    sources: list[EventEvidence] = Field(default_factory=list)
+
+
 class KPI(BaseModel):
     major: int
     macro: int

@@ -4,6 +4,8 @@
 
 构建一个面向港股、美股、外汇、贵金属、债市的分析系统后端，支持财报/公告、研报视图、宏观与新闻事件聚合，优先覆盖科技与工业行业，采用每日早/晚两次更新。
 
+> 推荐 Python 3.12（ChromaDB 在 3.12 环境下兼容性更佳）
+
 ## 数据源（免费）
 
 - **财报/公告**
@@ -65,9 +67,11 @@
 - `GET /assets/:assetId/events?range=1D|1W|1M|1Y`
 - `GET /research/company/:ticker`
 - `POST /qa`
+- `POST /analysis`（信源检索增强分析）
 
 ## 后续扩展
 
+- PC 端默认使用 Chroma 作为嵌入式向量库（本地落盘），用于信源语义检索与 `/analysis` 检索增强；生产可切换到 Postgres + pgvector
 - 引入 Postgres + pgvector 作为持久化与语义检索
 - 接入授权新闻与研报源（Reuters/FactSet/Refinitiv 等）
 - 增加多语言摘要、主题跟踪与信号强度回测
