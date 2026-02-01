@@ -1,4 +1,6 @@
 node_modules
+embedding_example.py
+example.py
 .DS_Store
 .corepack
 .env
