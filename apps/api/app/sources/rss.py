@@ -28,24 +28,25 @@ async def fetch_rss_events(config: AppConfig) -> list[Event]:
         ]
         responses = await asyncio.gather(*tasks, return_exceptions=True)
         for text in responses:
-            if isinstance(text, Exception) or not text:
+            if isinstance(text, BaseException) or not text:
                 continue
             parsed = feedparser.parse(text)
             for entry in parsed.entries[:20]:
                 published = _parse_published(entry)
-                headline = entry.get("title", "")
-                source_url = entry.get("link", "")
+                headline = _coerce_text(entry.get("title"), "")
+                source_url = _coerce_text(entry.get("link"), "")
                 if not headline:
                     continue
+                summary = _coerce_text(entry.get("summary"), "")
                 events.append(
                     Event(
                         event_id=str(uuid4()),
                         event_time=published,
                         ingest_time=datetime.now(timezone.utc),
                         source_type="news",
-                        publisher=entry.get("source", {}).get("title", "RSS"),
+                        publisher=_extract_publisher(entry),
                         headline=headline,
-                        summary=entry.get("summary", "")[:240],
+                        summary=summary[:240],
                         event_type=_infer_event_type(headline),
                         markets=_infer_markets(headline),
                         tickers=_infer_tickers(headline),
@@ -62,7 +63,7 @@ async def fetch_rss_events(config: AppConfig) -> list[Event]:
                                 source_url=source_url,
                                 title=headline,
                                 published_at=published,
-                                excerpt=(entry.get("summary", "")[:180] or "RSS summary not available."),
+                                excerpt=(summary[:180] or "RSS summary not available."),
                             )
                         ],
                         related_event_ids=None,
@@ -94,9 +95,31 @@ async def _fetch_feed(
 
 def _parse_published(entry: dict) -> datetime:
     published = entry.get("published_parsed")
-    if published:
+    if isinstance(published, (tuple, list)) and len(published) >= 6:
         return datetime(*published[:6], tzinfo=timezone.utc)
     return datetime.now(timezone.utc)
+
+
+def _coerce_text(value: object, default: str) -> str:
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="ignore")
+    if isinstance(value, list):
+        texts = [item for item in value if isinstance(item, str)]
+        if texts:
+            return " ".join(texts)
+        return default
+    return default
+
+
+def _extract_publisher(entry: dict) -> str:
+    source = entry.get("source")
+    if isinstance(source, dict):
+        return _coerce_text(source.get("title"), "RSS")
+    return "RSS"
 
 
 def _infer_event_type(text: str) -> str:

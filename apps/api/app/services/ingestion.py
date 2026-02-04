@@ -58,8 +58,15 @@ async def refresh_store(store: InMemoryStore, config: AppConfig) -> None:
                 if enabled
             ]
             for name, result in zip(source_names, results):
-                if isinstance(result, Exception):
+                if isinstance(result, BaseException):
                     logger.warning("source_failed source=%s error=%s", name, result)
+                    continue
+                if not isinstance(result, list):
+                    logger.warning(
+                        "source_invalid_result source=%s type=%s",
+                        name,
+                        type(result).__name__,
+                    )
                     continue
                 logger.info("source_loaded source=%s count=%s", name, len(result))
                 live_events.extend(result)

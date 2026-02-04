@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+from typing import Any
 
 import httpx
 
@@ -17,7 +18,7 @@ async def request_with_retry(
     retries: int,
     backoff: float,
     logger: logging.Logger,
-    **kwargs: object,
+    **kwargs: Any,
 ) -> httpx.Response:
     attempt = 0
     while True:

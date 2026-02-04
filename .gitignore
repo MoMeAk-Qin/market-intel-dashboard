@@ -13,6 +13,7 @@ apps/web/.next
 apps/web/out
 apps/api/dist
 apps/api/data/
+apps/api/apps/
 __pycache__/
 .pytest_cache/
 *.pyc

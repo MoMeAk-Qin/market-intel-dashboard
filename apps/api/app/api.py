@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 import logging
-from typing import Awaitable, Callable, Literal
+from typing import Awaitable, Callable, Literal, cast
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -41,6 +41,11 @@ from .services.vector_store import EmbeddingsUnavailable, VectorStore, VectorSto
 from .services.seed import ASSET_CATALOG, build_asset_series
 
 ASSET_MARKET_MAP = {item["id"]: item["market"] for item in ASSET_CATALOG}
+RangeKey = Literal["1D", "1W", "1M", "1Y"]
+_RANGE_KEYS: tuple[RangeKey, ...] = ("1D", "1W", "1M", "1Y")
+_RANGE_HINT = "Use one of: 1D, 1W, 1M, 1Y."
+LaneKey = Literal["macro", "industry", "company", "policy_risk"]
+_LANES: tuple[LaneKey, ...] = ("macro", "industry", "company", "policy_risk")
 
 
 def create_app() -> FastAPI:
@@ -149,7 +154,13 @@ def create_app() -> FastAPI:
         asset = next((item for item in ASSET_CATALOG if item["id"] == asset_id), None)
         if not asset:
             raise HTTPException(status_code=404, detail="Asset not found")
-        range_key = _normalize_range(range)
+        try:
+            range_key = _normalize_range(range)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid range: {range}. {_RANGE_HINT}",
+            )
         series = build_asset_series(asset["base"], range_key)
         return {"assetId": asset_id, "range": range_key, "series": series}
 
@@ -158,7 +169,14 @@ def create_app() -> FastAPI:
         market = ASSET_MARKET_MAP.get(asset_id)
         if not market:
             raise HTTPException(status_code=404, detail="Asset not found")
-        days = _range_to_days(_normalize_range(range))
+        try:
+            range_key = _normalize_range(range)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid range: {range}. {_RANGE_HINT}",
+            )
+        days = _range_to_days(range_key)
         cutoff = datetime.utcnow() - timedelta(days=days)
         items = [
             event
@@ -390,7 +408,7 @@ def build_dashboard_summary(target_date: date, events: list[Event]) -> Dashboard
         )
 
     timeline: list[TimelineLane] = []
-    for lane in ["macro", "industry", "company", "policy_risk"]:
+    for lane in _LANES:
         lane_events = [event for event in events if _map_lane(event) == lane][:5]
         timeline.append(TimelineLane(lane=lane, events=lane_events))
 
@@ -459,13 +477,13 @@ def _parse_clock(value: str) -> tuple[int, int]:
     return int(hour), int(minute)
 
 
-def _normalize_range(range_key: str) -> Literal["1D", "1W", "1M", "1Y"]:
-    if range_key in {"1D", "1W", "1M", "1Y"}:
-        return range_key
-    return "1M"
+def _normalize_range(range_key: str) -> RangeKey:
+    if range_key in _RANGE_KEYS:
+        return cast(RangeKey, range_key)
+    raise ValueError(f"Invalid range: {range_key}")
 
 
-def _range_to_days(range_key: str) -> int:
+def _range_to_days(range_key: RangeKey) -> int:
     if range_key == "1D":
         return 1
     if range_key == "1W":
@@ -475,7 +493,7 @@ def _range_to_days(range_key: str) -> int:
     return 365
 
 
-def _map_lane(event: Event) -> str:
+def _map_lane(event: Event) -> LaneKey:
     if event.event_type in {"macro_release", "rate_decision"}:
         return "macro"
     if event.event_type in {"regulation", "risk"}:
