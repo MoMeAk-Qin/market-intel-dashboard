@@ -1,6 +1,12 @@
 export type {
+  AnalysisRequest,
+  AnalysisResponse,
+  AnalysisUsage,
   AssetSeriesPoint,
   DashboardSummary,
+  DailyNewsResponse,
+  DailySummaryRequest,
+  DailySummaryResponse,
   Event,
   EventEvidence,
   EventNumber,

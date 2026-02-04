@@ -7,6 +7,8 @@ from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -46,7 +48,17 @@ def create_app() -> FastAPI:
     setup_logging(config)
     logger = logging.getLogger("api")
     logger.info("api_startup timezone=%s", config.timezone)
-    app = FastAPI(title="Market Intel API", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        await refresh_and_index()
+        _schedule_jobs(scheduler, config, refresh_and_index)
+        scheduler.start()
+        try:
+            yield
+        finally:
+            scheduler.shutdown(wait=False)
+
+    app = FastAPI(title="Market Intel API", version="0.1.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[config.cors_origin],
@@ -79,16 +91,6 @@ def create_app() -> FastAPI:
         except Exception as exc:
             logger.warning("vector_store_index_failed error=%s", exc)
 
-    @app.on_event("startup")
-    async def startup() -> None:
-        await refresh_and_index()
-        _schedule_jobs(scheduler, config, refresh_and_index)
-        scheduler.start()
-
-    @app.on_event("shutdown")
-    def shutdown() -> None:
-        scheduler.shutdown(wait=False)
-
     @app.get("/health")
     async def health() -> dict[str, bool]:
         return {"ok": True}
@@ -114,6 +116,7 @@ def create_app() -> FastAPI:
     ) -> PaginatedEvents:
         filtered = filter_events(
             store.events,
+            tz=ZoneInfo(config.timezone),
             from_=from_,
             to=to,
             market=market,
@@ -403,6 +406,7 @@ def build_dashboard_summary(target_date: date, events: list[Event]) -> Dashboard
 def filter_events(
     events: list[Event],
     *,
+    tz: ZoneInfo,
     from_: str | None,
     to: str | None,
     market: str | None,

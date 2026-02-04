@@ -12,6 +12,7 @@ pnpm-debug.log
 apps/web/.next
 apps/web/out
 apps/api/dist
+apps/api/data/
 __pycache__/
 .pytest_cache/
 *.pyc

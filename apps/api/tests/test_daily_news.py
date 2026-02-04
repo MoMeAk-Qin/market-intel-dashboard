@@ -3,10 +3,16 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from contextlib import contextmanager
+
 from fastapi.testclient import TestClient
 
 from app.api import create_app
 from app.models import AnalysisResponse, Event, EventEvidence
+
+
+def _fixed_now(tz: ZoneInfo) -> datetime:
+    return datetime.now(tz).replace(hour=12, minute=0, second=0, microsecond=0)
 
 
 def _make_event(
@@ -47,7 +53,8 @@ def _make_event(
     )
 
 
-def _prepare_app(monkeypatch, events: list[Event]) -> TestClient:
+@contextmanager
+def _prepare_app(monkeypatch, events: list[Event]):
     monkeypatch.setenv("ENABLE_VECTOR_STORE", "false")
     monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
 
@@ -57,12 +64,13 @@ def _prepare_app(monkeypatch, events: list[Event]) -> TestClient:
         store.replace_events(events)
 
     monkeypatch.setattr(api_module, "refresh_store", _fake_refresh)
-    return TestClient(create_app())
+    with TestClient(create_app()) as client:
+        yield client
 
 
 def test_news_today_filters(monkeypatch) -> None:
     tz = ZoneInfo("Asia/Hong_Kong")
-    now = datetime.now(tz)
+    now = _fixed_now(tz)
     today_event = _make_event(
         headline="US AAPL headline",
         published_at=now - timedelta(hours=2),
@@ -82,34 +90,34 @@ def test_news_today_filters(monkeypatch) -> None:
         tickers=["AAPL"],
     )
 
-    client = _prepare_app(monkeypatch, [today_event, today_other, yesterday_event])
-    resp = client.get("/news/today", params={"market": "US", "tickers": "AAPL"})
-    assert resp.status_code == 200
-    payload = resp.json()
-    assert payload["total"] == 1
-    assert payload["items"][0]["headline"] == "US AAPL headline"
+    with _prepare_app(monkeypatch, [today_event, today_other, yesterday_event]) as client:
+        resp = client.get("/news/today", params={"market": "US", "tickers": "AAPL"})
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["total"] == 1
+        assert payload["items"][0]["headline"] == "US AAPL headline"
 
 
 def test_daily_summary_empty(monkeypatch) -> None:
     tz = ZoneInfo("Asia/Hong_Kong")
-    now = datetime.now(tz)
+    now = _fixed_now(tz)
     yesterday_event = _make_event(
         headline="Old US AAPL",
         published_at=now - timedelta(days=1, hours=1),
         markets=["US"],
         tickers=["AAPL"],
     )
-    client = _prepare_app(monkeypatch, [yesterday_event])
-    resp = client.post("/daily/summary", json={})
-    assert resp.status_code == 200
-    payload = resp.json()
-    assert payload["total_news"] == 0
-    assert payload["answer"] == "今日暂无符合条件的新闻。"
+    with _prepare_app(monkeypatch, [yesterday_event]) as client:
+        resp = client.post("/daily/summary", json={})
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["total_news"] == 0
+        assert payload["answer"] == "今日暂无符合条件的新闻。"
 
 
 def test_daily_summary_calls_analysis(monkeypatch) -> None:
     tz = ZoneInfo("Asia/Hong_Kong")
-    now = datetime.now(tz)
+    now = _fixed_now(tz)
     today_event = _make_event(
         headline="US AAPL headline",
         published_at=now - timedelta(hours=1),
@@ -117,30 +125,29 @@ def test_daily_summary_calls_analysis(monkeypatch) -> None:
         tickers=["AAPL"],
     )
 
-    client = _prepare_app(monkeypatch, [today_event])
+    with _prepare_app(monkeypatch, [today_event]) as client:
+        import app.api as api_module
 
-    import app.api as api_module
+        def _fake_analyze(payload, config, vector_store=None) -> AnalysisResponse:
+            return AnalysisResponse(
+                answer="OK",
+                model="qwen3-max",
+                usage=None,
+                sources=[],
+            )
 
-    def _fake_analyze(payload, config, vector_store=None) -> AnalysisResponse:
-        return AnalysisResponse(
-            answer="OK",
-            model="qwen3-max",
-            usage=None,
-            sources=[],
-        )
+        monkeypatch.setattr(api_module, "analyze_financial_sources", _fake_analyze)
 
-    monkeypatch.setattr(api_module, "analyze_financial_sources", _fake_analyze)
-
-    resp = client.post("/daily/summary", json={"focus": "给出重点"})
-    assert resp.status_code == 200
-    payload = resp.json()
-    assert payload["answer"] == "OK"
-    assert payload["total_news"] == 1
+        resp = client.post("/daily/summary", json={"focus": "给出重点"})
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["answer"] == "OK"
+        assert payload["total_news"] == 1
 
 
 def test_admin_refresh(monkeypatch) -> None:
     tz = ZoneInfo("Asia/Hong_Kong")
-    now = datetime.now(tz)
+    now = _fixed_now(tz)
     event_a = _make_event(
         headline="A",
         published_at=now,
@@ -154,9 +161,9 @@ def test_admin_refresh(monkeypatch) -> None:
         tickers=[],
     )
 
-    client = _prepare_app(monkeypatch, [event_a, event_b])
-    resp = client.post("/admin/refresh")
-    assert resp.status_code == 200
-    payload = resp.json()
-    assert payload["ok"] is True
-    assert payload["total_events"] == 2
+    with _prepare_app(monkeypatch, [event_a, event_b]) as client:
+        resp = client.post("/admin/refresh")
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["ok"] is True
+        assert payload["total_events"] == 2

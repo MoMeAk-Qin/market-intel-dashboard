@@ -69,6 +69,52 @@ export type QAResponse = {
   evidence: EventEvidence[];
 };
 
+export type AnalysisRequest = {
+  question: string;
+  context?: string;
+  sources?: string[];
+  use_retrieval?: boolean;
+  top_k?: number;
+};
+
+export type AnalysisUsage = {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+};
+
+export type AnalysisResponse = {
+  answer: string;
+  model: string;
+  usage?: AnalysisUsage | null;
+  sources: EventEvidence[];
+};
+
+export type DailyNewsResponse = {
+  date: string;
+  items: Event[];
+  total: number;
+};
+
+export type DailySummaryRequest = {
+  focus?: string;
+  markets?: string[];
+  tickers?: string[];
+  query?: string;
+  limit?: number;
+  use_retrieval?: boolean;
+  top_k?: number;
+};
+
+export type DailySummaryResponse = {
+  date: string;
+  answer: string;
+  model: string;
+  total_news: number;
+  usage?: AnalysisUsage | null;
+  sources: EventEvidence[];
+};
+
 export type DashboardSummary = {
   date: string;
   kpis: { major: number; macro: number; company: number; risk: number };

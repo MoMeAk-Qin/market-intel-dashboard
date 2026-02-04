@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 
 from .models import Event
 
@@ -13,4 +13,4 @@ class InMemoryStore:
 
     def replace_events(self, events: list[Event]) -> None:
         self.events = events
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(UTC)
