@@ -82,3 +82,13 @@
 测试方法 / 采样口径 / 统计周期：
 - 行情成功率：按“源 × 天”统计；月度复盘
 - 口径一致性：抽样 20 个指标与前端展示比对；季度复盘
+
+## 阶段 99：静态类型告警（最低优先级）
+
+- `apps/api/app/services/http_client.py`：`request_with_retry` 透传参数类型过宽导致 httpx 参数类型告警
+- `apps/api/app/services/ingestion.py`：`asyncio.gather` 返回异常/非列表的静态类型告警
+- `apps/api/app/services/seed.py`：事件构造使用 `Literal` 类型的告警（`EventType` / `Market` / `Sector`）
+- `apps/api/app/services/vector_store.py`：`chromadb` `upsert` 参数类型告警
+- `apps/api/app/sources/edgar.py` / `apps/api/app/sources/hkex.py`：事件字段 `Literal` 类型告警
+- `apps/api/app/sources/fred.py` / `apps/api/app/sources/rss.py`：`markets/sectors` 及文本解析相关类型告警
+- `apps/api/tests/test_daily_news.py`：`Event` 构造参数 `Literal` 类型告警
