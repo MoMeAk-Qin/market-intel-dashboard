@@ -66,6 +66,19 @@ class AssetSeriesPoint(BaseModel):
     value: float
 
 
+class MetricPoint(BaseModel):
+    provider: str
+    series_id: str
+    frequency: Literal["daily", "monthly"]
+    date: date
+    value: float
+    unit_raw: str | None = None
+    unit_norm: str | None = None
+    description: str | None = None
+    api_url: str
+    field_name: str
+
+
 class QAResponse(BaseModel):
     answer: str
     evidence: list[EventEvidence]

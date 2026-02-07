@@ -61,7 +61,11 @@ class AppConfig:
     hkex_search_params: dict[str, str]
     hkex_max_items: int
     hkma_endpoints: tuple[str, ...]
+    hkma_catalog_path: str
     hkma_max_fields: int
+    hkma_page_size: int
+    hkma_daily_lookback_days: int
+    hkma_monthly_lookback_months: int
     log_level: str
     log_file: str
     http_timeout: float
@@ -131,7 +135,14 @@ class AppConfig:
             ),
             hkex_max_items=int(os.getenv("HKEX_MAX_ITEMS", "20")),
             hkma_endpoints=_get_list(os.getenv("HKMA_ENDPOINTS")),
+            hkma_catalog_path=os.getenv(
+                "HKMA_CATALOG_PATH",
+                "apps/api/app/sources/hkma_catalog.json",
+            ),
             hkma_max_fields=int(os.getenv("HKMA_MAX_FIELDS", "6")),
+            hkma_page_size=int(os.getenv("HKMA_PAGE_SIZE", "200")),
+            hkma_daily_lookback_days=int(os.getenv("HKMA_DAILY_LOOKBACK_DAYS", "14")),
+            hkma_monthly_lookback_months=int(os.getenv("HKMA_MONTHLY_LOOKBACK_MONTHS", "24")),
             log_level=os.getenv("LOG_LEVEL", "INFO"),
             log_file=os.getenv("LOG_FILE", "apps/api/data/api.log"),
             http_timeout=float(os.getenv("HTTP_TIMEOUT", "12")),

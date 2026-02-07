@@ -64,6 +64,18 @@ packages/shared 共享类型与 schema
 - 早/晚各一次（默认 08:30 / 18:30）
 - 可通过 `ENABLE_LIVE_SOURCES=true` 启用 RSS 采集
 
+## HKMA 自动发现工具
+
+```bash
+uv run --project apps/api apps/api/tools/hkma_discovery.py
+```
+
+- 入口：HKMA apidocs Market Data and Statistics
+- 输出：
+  - `apps/api/app/sources/hkma_catalog.json`
+  - `apps/api/app/sources/hkma_endpoints.env`
+  - `apps/api/app/sources/hkma_units.json`
+
 ## TODO
 
 - 接入 Postgres + pgvector 作为持久化存储

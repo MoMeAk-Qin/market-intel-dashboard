@@ -85,23 +85,31 @@
 
 ## 5) HKMA API（港元利率/资金面/外汇）
 
-**接口**
-- API 目录：
-  - `https://api.hkma.gov.hk/public/`
-- 目录下以 **market-data-and-statistics** 分类提供数据表（需以目录为准）：
-  - `https://api.hkma.gov.hk/public/market-data-and-statistics/{dataset}/{table}?format=json`
+**发现入口（权威）**
+- `https://apidocs.hkma.gov.hk/documentation/market-data-and-statistics/`
 
-**建议使用的数据表（以目录确认具体表名）**
-- HIBOR / HIBID：利率曲线（短端）
-- USD/HKD：联系汇率相关指标
-- Exchange Fund Bills/Notes：发行与收益率
+**实现方式**
+- 不再手工维护 `{dataset}/{table}` 模板。
+- 使用 `hkma-discovery` 自动递归发现 daily/monthly 数据表页面。
+- 每页提取：
+  - `API URL`
+  - `Output Fields (JSON)`（含 `Unit Of Measure`）
+  - 对应 API 的 OpenAPI JSON（提取 query 参数 + Record schema）
 
-**字段映射（通用）**
-- `time_period` / `end_of_day` / `date` -> `macro.date`
-- `value` / `rate` -> `macro.value`
-- `tenor` -> `series_id`（如 `HKMA_HIBOR_1M`）
+**自动化产物**
+- `apps/api/app/sources/hkma_catalog.json`
+- `apps/api/app/sources/hkma_endpoints.env`（`HKMA_ENDPOINTS=...`）
+- `apps/api/app/sources/hkma_units.json`（`{api_url: {field: unit}}`）
 
-> HKMA API 的 dataset/table 命名以目录为准；测试期在配置中指定具体 URL。\n+\n详细表名清单与待确认项见 `docs/hkma-endpoints.md`。
+**标准化（ingestion）**
+- 按 catalog 拉取 records，拆分为 `MetricPoint`：
+  - `provider=HKMA`
+  - `series_id=HKMA.<API_SLUG>.<FIELD_NAME>`
+  - `frequency=daily|monthly`
+  - `date`、`value`
+  - `unit_raw`（文档原始单位）/ `unit_norm`（归一化单位）
+
+详细说明见 `docs/hkma-endpoints.md`。
 
 ## 6) FRED（宏观/利率/贵金属）
 

@@ -1,52 +1,112 @@
-# HKMA API 端点清单（待确认）
+# HKMA API 接入清单（自动发现 + 自动单位映射）
 
-HKMA API 端点需要从官方文档确认具体 `dataset/table` 名称。下面列出**建议优先接入的表**，并提供可填写到 `HKMA_ENDPOINTS` 的 URL 模板。请确认每个表的真实名称后替换。
+## 背景与结论
 
-## URL 模板
+- 不再使用 `{dataset}/{table}` URL 模板，也不再人工确认 dataset/table。
+- 以 HKMA 官方文档页（apidocs）中展示的 **API URL** 为唯一权威。
+- 每个接口的字段与单位来自文档页 **Output Fields (JSON)** 表格（含 Unit Of Measure）。
+- 接口的 query 参数、Record 字段类型来自对应 API URL 返回的 **OpenAPI JSON**。
 
-```
-https://api.hkma.gov.hk/public/market-data-and-statistics/{dataset}/{table}?format=json
-```
+最终目标：通过程序自动生成 `hkma_catalog.json`，并据此生成 `HKMA_ENDPOINTS`、字段/单位映射、以及 ingestion 所需的标准化规则。
 
-## 建议优先接入的表（请确认表名）
+---
 
-1) **HIBOR / HIBID**
-- 目的：港元短端利率曲线
-- 需要确认：是否按 `tenor` 字段返回（ON/1W/1M/3M/6M/12M）
-- 预期字段：`date` + `tenor` + `value`/`rate`
+## 文档入口（自动发现的根目录）
 
-2) **Base Rate / Discount Window**
-- 目的：政策利率与流动性指标
-- 需要确认：表名与字段名（`base_rate` / `discount_window_rate`）
+- Market Data and Statistics 根目录：
+  https://apidocs.hkma.gov.hk/documentation/market-data-and-statistics/
 
-3) **USD/HKD Spot 或参考汇率**
-- 目的：联系汇率指标
-- 需要确认：是否提供 `mid_rate` / `closing_rate`
+该根目录下至少包含两类：
+- Monthly Statistical Bulletin（按月）
+- Daily Monetary Statistics（按日）
 
-4) **Exchange Fund Bills/Notes Yields**
-- 目的：港币短端收益率结构
-- 需要确认：是否有按期限列（`tenor`）
+程序应递归抓取上述两类目录下的所有“具体数据表页面”。
 
-5) **Aggregate Balance / Interbank Liquidity**
-- 目的：资金面与流动性监测
-- 需要确认：是否有 `aggregate_balance` 指标
+---
 
-## 填写示例（确认后替换）
+## 自动化产物（作为开发交付物）
 
-```
-HKMA_ENDPOINTS=
-https://api.hkma.gov.hk/public/market-data-and-statistics/<dataset>/<table1>?format=json,
-https://api.hkma.gov.hk/public/market-data-and-statistics/<dataset>/<table2>?format=json
-```
+### 1) hkma_catalog.json（核心产物）
+每个条目包含：
+- frequency: daily | monthly
+- doc_url: apidocs 页面
+- api_url: 文档页的 API URL（真实 endpoint）
+- openapi_summary:
+  - base_url
+  - endpoints (method/url)
+  - query_params
+  - record_fields（字段类型/format）
+- fields_meta（来自 Output Fields 表格）：
+  - name / type / unit_of_measure / description
 
-## 需要你确认的表
+### 2) hkma_endpoints.env（可选）
+自动从 hkma_catalog.json 生成：
+- HKMA_ENDPOINTS= <api_url1>,<api_url2>,...
 
-- HIBOR/HIBID 数据集与表名
-- Base Rate / Discount Window 表名
-- USD/HKD 参考汇率表名
-- Exchange Fund Bills/Notes 收益率表名
-- Aggregate Balance/资金面指标表名
+### 3) hkma_units.json（可选）
+按 api_url 分组输出：
+- { api_url: { field_name: unit_of_measure } }
 
-## 待办事项
+---
 
-- 确认 HKMA 的具体 dataset/table 名称（见本文件）。确认后写入 `HKMA_ENDPOINTS` 并进行字段映射微调。
+## MVP 优先接入（按日 + 按月都要）
+
+### A. 日频（Daily Monetary Statistics）
+用途：每日监控/分析（资金面、短端利率、联系汇率压力）
+- Daily Figures of Interbank Liquidity
+  - 关键字段（示例）：closing_balance、hibor_overnight、disc_win_base_rate、cu_weakside/cu_strongside、twi
+  - 单位从 Output Fields 表自动获取
+
+（后续可扩展：Daily Figures of Monetary Base 等）
+
+### B. 月频（Monthly Statistical Bulletin）
+用途：基准/同比环比（上月末、去年同期）
+- Monetary Statistics（Monthly）
+  - 关键字段（示例）：m1_total/m2_total/m3_total、monetary_base_total、aggr_balance、exrate_hkd_usd 等
+  - 单位从 Output Fields 表自动获取
+
+---
+
+## ingestion 设计要求（给 Codex 的实现约束）
+
+### 1) 采集分两步
+1) Discover：
+- 从 apidocs 根目录递归抓取所有具体数据表页面
+- 每个页面抽取：
+  - API URL
+  - Output Fields (JSON) 表（字段/单位/描述）
+- 再请求 API URL 返回 OpenAPI JSON，抽取参数/Record schema
+
+2) Fetch data（后续 ingestion）：
+- 使用 api_url + query（from/to/pagesize/offset 等）拉 records
+- 解析返回：header/result/records
+
+### 2) 指标标准化（建议的内部 schema）
+把 HKMA “宽表 record” 拆成多条 MetricPoint（供前端画图/供分析）：
+- provider="HKMA"
+- series_id：建议规则 `HKMA.<API_SLUG>.<FIELD_NAME>`
+- frequency: daily|monthly
+- date: end_of_date / end_of_month
+- value: number
+- unit_raw: Unit Of Measure（原文）
+- unit_norm: 归一化单位（可选，如 HK$ million -> HKD_mn）
+- description: 文档描述
+
+### 3) Daily vs Monthly 的使用规则
+- Daily：每日分析输入（今日值 + 近14天滚动回看增量拉取）
+- Monthly：基准对照（上月末、去年同期）用于 YoY/MoM
+- 不混用同一条 series（daily/monthly 分开）
+
+---
+
+## 待办事项（新版）
+
+1) 实现 hkma 文档自动发现（递归抓取）
+2) 实现 Output Fields 表格解析（Name/Type/Unit Of Measure/Description）
+3) 实现 OpenAPI JSON 摘要抽取（endpoints/params/record schema）
+4) 生成 hkma_catalog.json（并纳入仓库版本控制）
+5) 基于 hkma_catalog.json 自动生成：
+   - HKMA_ENDPOINTS
+   - units 映射表（可选）
+6) 实现数据拉取与标准化（record -> MetricPoint）
+7) 在 Dashboard/Asset 页面接入（先展示关键字段）
