@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 import logging
 import time
 from typing import Iterable
@@ -22,7 +23,7 @@ logger = logging.getLogger("ingestion")
 
 async def refresh_store(store: InMemoryStore, config: AppConfig) -> None:
     started = time.perf_counter()
-    seeded = build_seed_events()
+    seeded = build_seed_events() if config.enable_seed_data else []
     live_events: list[Event] = []
 
     if config.enable_live_sources:
@@ -71,14 +72,21 @@ async def refresh_store(store: InMemoryStore, config: AppConfig) -> None:
                 logger.info("source_loaded source=%s count=%s", name, len(result))
                 live_events.extend(result)
 
-    events = dedupe_events([*live_events, *seeded])
+    seeded_events: list[Event] = []
+    if config.enable_seed_data:
+        if config.seed_only_when_no_live:
+            seeded_events = seeded if not live_events else []
+        else:
+            seeded_events = seeded
+
+    events = dedupe_events([*live_events, *seeded_events])
     store.replace_events(events)
     duration = time.perf_counter() - started
     logger.info(
         "refresh_complete total=%s live=%s seeded=%s duration=%.2fs",
         len(events),
         len(live_events),
-        len(seeded),
+        len(seeded_events),
         duration,
     )
 
@@ -86,7 +94,17 @@ async def refresh_store(store: InMemoryStore, config: AppConfig) -> None:
 def dedupe_events(events: Iterable[Event]) -> list[Event]:
     seen: set[str] = set()
     ordered: list[Event] = []
-    for event in sorted(events, key=lambda item: item.event_time, reverse=True):
+    sorted_events = sorted(
+        events,
+        key=lambda item: (
+            _origin_priority(item),
+            _to_utc(item.event_time),
+            item.impact,
+            item.confidence,
+        ),
+        reverse=True,
+    )
+    for event in sorted_events:
         key = _normalize_key(event.headline)
         if key in seen:
             continue
@@ -97,6 +115,16 @@ def dedupe_events(events: Iterable[Event]) -> list[Event]:
 
 def _normalize_key(text: str) -> str:
     return "".join(ch for ch in text.lower() if ch.isalnum() or ch.isspace()).strip()
+
+
+def _origin_priority(event: Event) -> int:
+    return 1 if event.data_origin == "live" else 0
+
+
+def _to_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def hot_tags() -> list[str]:

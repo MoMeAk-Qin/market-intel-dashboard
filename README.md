@@ -35,7 +35,7 @@ packages/shared 共享类型与 schema
 
 - `GET /health`
 - `GET /dashboard/summary?date=YYYY-MM-DD`
-- `GET /events`
+- `GET /events`（支持 `origin=live|seed|all`）
 - `GET /events/:id`
 - `GET /assets/:assetId/chart?range=1D|1W|1M|1Y`
 - `GET /assets/:assetId/events?range=1D|1W|1M|1Y`

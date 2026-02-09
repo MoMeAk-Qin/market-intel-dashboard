@@ -1,17 +1,17 @@
-# TODO 清单（结合代码核对结果，更新于 2026-02-04）
+# TODO 清单（结合代码核对结果，更新于 2026-02-09）
 
 ## 阶段 0：阻塞修复与一致性（必须先做）
 
-- 修复 `/events` 排序使用未定义 `tz` 的运行时错误（后端）
-- 补齐共享类型：`DailyNewsResponse` / `DailySummaryResponse` / `AnalysisRequest` / `AnalysisResponse`（`packages/shared`）
-- 统一前后端日期/时区使用方式（避免今日新闻跨日误差）
+- [x] 修复 `/events` 时间过滤与排序在混合时区输入下的运行时问题（后端）
+- [x] 补齐并统一共享类型：`DailyNewsResponse` / `DailySummaryResponse` / `AnalysisRequest` / `AnalysisResponse`（`packages/shared`）
+- [x] 统一前后端日期/时区使用方式（避免今日新闻跨日误差）
 
 ## 阶段 1：每日新闻闭环（MVP+，优先级最高）
 
 - 关注清单与过滤逻辑（用户关注市场/标的/关键词；默认应用到 `/news/today`、`/daily/summary`）
 - `/analysis` 输出模板固化（结论/影响/风险/关注点 + [n] 证据引用），并做结构化校验
 - 分析结果缓存（按问题+来源 hash，带 TTL），`/analysis` 与 `/daily/summary` 复用
-- `/qa` 由规则回答升级为“检索 + Qwen”或“向量检索 + Qwen”链路
+- [x] `/qa` 由规则回答升级为“检索 + Qwen”或“向量检索 + Qwen”链路
 
 验收标准 / 里程碑（含 KPI）：
 - P95 响应时延：无缓存 ≤ 6s；命中缓存 ≤ 1.5s（本地环境）

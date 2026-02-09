@@ -102,7 +102,8 @@ def create_app() -> FastAPI:
 
     @app.get("/dashboard/summary", response_model=DashboardSummary)
     async def dashboard_summary(date_str: str | None = Query(default=None, alias="date")) -> DashboardSummary:
-        target_date = _parse_date(date_str) if date_str else date.today()
+        tz = ZoneInfo(config.timezone)
+        target_date = _parse_date(date_str) if date_str else _today_in_tz(tz)
         return build_dashboard_summary(target_date, store.events)
 
     @app.get("/events", response_model=PaginatedEvents)
@@ -112,6 +113,7 @@ def create_app() -> FastAPI:
         market: str | None = None,
         sector: str | None = None,
         event_type: str | None = Query(default=None, alias="type"),
+        origin: Literal["live", "seed", "all"] = "all",
         stance: str | None = None,
         minImpact: int | None = None,
         minConfidence: float | None = None,
@@ -119,19 +121,23 @@ def create_app() -> FastAPI:
         page: int = 1,
         pageSize: int = 20,
     ) -> PaginatedEvents:
-        filtered = filter_events(
-            store.events,
-            tz=ZoneInfo(config.timezone),
-            from_=from_,
-            to=to,
-            market=market,
-            sector=sector,
-            type=event_type,
-            stance=stance,
-            minImpact=minImpact,
-            minConfidence=minConfidence,
-            q=q,
-        )
+        try:
+            filtered = filter_events(
+                store.events,
+                tz=ZoneInfo(config.timezone),
+                from_=from_,
+                to=to,
+                market=market,
+                sector=sector,
+                type=event_type,
+                origin=origin,
+                stance=stance,
+                minImpact=minImpact,
+                minConfidence=minConfidence,
+                q=q,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         page = max(page, 1)
         pageSize = max(5, min(pageSize, 50))
         start = (page - 1) * pageSize
@@ -234,33 +240,39 @@ def create_app() -> FastAPI:
 
     @app.post("/qa", response_model=QAResponse)
     async def qa(payload: dict[str, str]) -> QAResponse:
-        question = payload.get("question", "").lower()
-        picked = next((event for event in store.events if event.event_type == "rate_decision"), None)
-        answer = (
-            "Policy pacing still hinges on inflation and growth, with near-term focus on the next policy update."
+        question = payload.get("question", "").strip()
+        if not question:
+            raise HTTPException(status_code=400, detail="question is required")
+
+        tz = ZoneInfo(config.timezone)
+        selected_events = _search_events_for_question(store.events, question, tz=tz, limit=5)
+        fallback_evidence = _collect_evidence(selected_events, limit=6)
+
+        if config.dashscope_api_key:
+            analysis_payload = AnalysisRequest(
+                question=question,
+                context=_build_qa_context(selected_events, tz),
+                sources=[f"{ev.title} | {ev.source_url}" for ev in fallback_evidence],
+                use_retrieval=True,
+                top_k=config.analysis_top_k,
+            )
+            try:
+                analysis = analyze_financial_sources(analysis_payload, config, vector_store)
+                answer = analysis.answer.strip()
+                if answer:
+                    return QAResponse(
+                        answer=answer,
+                        evidence=analysis.sources or fallback_evidence,
+                    )
+            except ValueError as exc:
+                logger.warning("qa_analysis_value_error error=%s", exc)
+            except Exception as exc:
+                logger.warning("qa_analysis_failed error=%s", exc)
+
+        return QAResponse(
+            answer=_build_qa_fallback_answer(selected_events),
+            evidence=fallback_evidence,
         )
-        if "gold" in question or "xau" in question:
-            picked = next((event for event in store.events if "METALS" in event.markets), picked)
-            answer = (
-                "Precious metals remain driven by real yields and risk hedging demand, with near-term moves tied to policy expectations."
-            )
-        elif "earnings" in question or "aapl" in question:
-            picked = next((event for event in store.events if event.event_type == "earnings"), picked)
-            answer = (
-                "Earnings momentum is still led by product and services mix, with market focus on margin durability."
-            )
-        elif "fx" in question or "dxy" in question:
-            picked = next((event for event in store.events if "FX" in event.markets), picked)
-            answer = (
-                "The dollar index is tugged by policy divergence and risk demand, with the short-term path leaning on macro confirmation."
-            )
-        elif "risk" in question or "regulation" in question:
-            picked = next((event for event in store.events if event.event_type == "risk"), picked)
-            answer = (
-                "Policy and regulatory events meaningfully affect risk appetite; track how quickly the impact chain spreads."
-            )
-        evidence = picked.evidence if picked else store.events[0].evidence
-        return QAResponse(answer=answer, evidence=evidence)
 
     @app.post("/analysis", response_model=AnalysisResponse)
     async def analyze(payload: AnalysisRequest) -> AnalysisResponse:
@@ -430,26 +442,30 @@ def filter_events(
     market: str | None,
     sector: str | None,
     type: str | None,
+    origin: Literal["live", "seed", "all"],
     stance: str | None,
     minImpact: int | None,
     minConfidence: float | None,
     q: str | None,
 ) -> list[Event]:
-    from_time = datetime.fromisoformat(from_) if from_ else None
-    to_time = datetime.fromisoformat(to) if to else None
+    from_time = _parse_datetime_with_tz(from_, tz, field="from")
+    to_time = _parse_datetime_with_tz(to, tz, field="to")
     keyword = q.lower().strip() if q else None
 
     filtered: list[Event] = []
     for event in events:
-        if from_time and event.event_time < from_time:
+        event_time = _to_tz(event.event_time, tz)
+        if from_time and event_time < from_time:
             continue
-        if to_time and event.event_time > to_time:
+        if to_time and event_time > to_time:
             continue
         if market and market not in event.markets:
             continue
         if sector and sector not in event.sectors:
             continue
         if type and event.event_type != type:
+            continue
+        if origin != "all" and event.data_origin != origin:
             continue
         if stance and event.stance != stance:
             continue
@@ -470,6 +486,10 @@ def filter_events(
 
 def _parse_date(value: str) -> date:
     return datetime.fromisoformat(value).date()
+
+
+def _today_in_tz(tz: ZoneInfo) -> date:
+    return datetime.now(tz).date()
 
 
 def _parse_clock(value: str) -> tuple[int, int]:
@@ -515,6 +535,23 @@ def _to_tz(dt: datetime, tz: ZoneInfo) -> datetime:
     return dt.astimezone(tz)
 
 
+def _parse_datetime_with_tz(
+    value: str | None,
+    tz: ZoneInfo,
+    *,
+    field: str,
+) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"Invalid {field} datetime: {value}") from exc
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=tz)
+    return parsed.astimezone(tz)
+
+
 def _filter_today_news(
     events: list[Event],
     tz: ZoneInfo,
@@ -549,7 +586,7 @@ def _filter_today_news(
                 continue
         filtered.append(event)
 
-    return sorted(filtered, key=lambda item: item.event_time, reverse=True)
+    return sorted(filtered, key=lambda item: _to_tz(item.event_time, tz), reverse=True)
 
 
 def _collect_evidence(items: list[Event], *, limit: int) -> list[EventEvidence]:
@@ -564,3 +601,97 @@ def _collect_evidence(items: list[Event], *, limit: int) -> list[EventEvidence]:
             if len(evidence) >= limit:
                 return evidence
     return evidence
+
+
+def _search_events_for_question(
+    events: list[Event],
+    question: str,
+    *,
+    tz: ZoneInfo,
+    limit: int,
+) -> list[Event]:
+    if not events:
+        return []
+    tokens = _tokenize_text(question)
+    scored: list[tuple[int, Event]] = []
+    for event in events:
+        score = _score_event_for_tokens(event, tokens)
+        if score <= 0 and tokens:
+            continue
+        scored.append((score, event))
+
+    if not scored:
+        ordered = sorted(
+            events,
+            key=lambda item: (item.impact, item.confidence, _to_tz(item.event_time, tz)),
+            reverse=True,
+        )
+        return ordered[:limit]
+
+    scored.sort(
+        key=lambda pair: (
+            pair[0],
+            pair[1].impact,
+            pair[1].confidence,
+            _to_tz(pair[1].event_time, tz),
+        ),
+        reverse=True,
+    )
+    return [event for _, event in scored[:limit]]
+
+
+def _tokenize_text(text: str) -> set[str]:
+    normalized = "".join(char if char.isalnum() else " " for char in text.lower())
+    return {token for token in normalized.split() if token}
+
+
+def _score_event_for_tokens(event: Event, tokens: set[str]) -> int:
+    if not tokens:
+        return 1
+    headline = event.headline.lower()
+    summary = event.summary.lower()
+    publisher = event.publisher.lower()
+    tickers = " ".join(event.tickers).lower()
+    markets = " ".join(event.markets).lower()
+    event_type = event.event_type.lower()
+    score = 0
+    for token in tokens:
+        if token in headline:
+            score += 3
+        if token in summary:
+            score += 2
+        if token in publisher:
+            score += 1
+        if token in tickers:
+            score += 4
+        if token in markets:
+            score += 2
+        if token in event_type:
+            score += 2
+    return score
+
+
+def _build_qa_context(events: list[Event], tz: ZoneInfo) -> str:
+    if not events:
+        return "当前事件流为空。"
+    lines = [
+        f"- {_to_tz(event.event_time, tz).isoformat()} | {event.publisher} | {event.headline} | {event.summary}"
+        for event in events
+    ]
+    return "候选事件：\n" + "\n".join(lines)
+
+
+def _build_qa_fallback_answer(events: list[Event]) -> str:
+    if not events:
+        return "当前暂无可用于回答的问题事件数据。"
+    top = events[0]
+    lines = [
+        "当前未使用到可用的 LLM 分析能力，以下为基于事件检索的摘要：",
+        f"最相关事件：{top.headline}（{top.publisher}）",
+        f"要点：{top.summary}",
+    ]
+    if len(events) > 1:
+        lines.append("其他相关事件：")
+        for event in events[1:3]:
+            lines.append(f"- {event.headline}（影响 {event.impact}）")
+    return "\n".join(lines)

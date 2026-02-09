@@ -3,6 +3,7 @@ export type {
   AnalysisResponse,
   AnalysisUsage,
   AssetSeriesPoint,
+  DataOrigin,
   DashboardSummary,
   DailyNewsResponse,
   DailySummaryRequest,
@@ -13,6 +14,7 @@ export type {
   EventSourceType,
   EventType,
   Market,
+  PaginatedEvents,
   QAResponse,
   Sector,
 } from './types';

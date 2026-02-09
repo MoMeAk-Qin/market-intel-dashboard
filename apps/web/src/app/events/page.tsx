@@ -4,7 +4,8 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiGet } from '@/lib/api';
-import type { Event } from '@market/shared';
+import { formatApiDateTime } from '@/lib/datetime';
+import type { Event, PaginatedEvents } from '@market/shared';
 import {
   ColumnDef,
   getCoreRowModel,
@@ -34,8 +35,9 @@ const typeOptions = [
   'risk',
 ];
 const stanceOptions = ['positive', 'neutral', 'negative'];
+const originOptions = ['all', 'live', 'seed'] as const;
 
-const formatTime = (value: string) => new Date(value).toLocaleString();
+const formatTime = (value: string) => formatApiDateTime(value);
 
 export default function EventsPage() {
   const router = useRouter();
@@ -51,6 +53,7 @@ export default function EventsPage() {
       market: params.market,
       sector: params.sector,
       type: params.type,
+      origin: params.origin,
       stance: params.stance,
       minImpact: params.minImpact,
       minConfidence: params.minConfidence,
@@ -62,8 +65,7 @@ export default function EventsPage() {
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['events', queryParams],
-    queryFn: () =>
-      apiGet<{ items: Event[]; page: number; pageSize: number; total: number }>('/events', queryParams),
+    queryFn: () => apiGet<PaginatedEvents>('/events', queryParams),
   });
 
   const { data: detailData, isFetching: detailLoading } = useQuery({
@@ -101,6 +103,15 @@ export default function EventsPage() {
         accessorKey: 'event_type',
         header: 'Type',
         cell: ({ row }) => <span className="text-xs uppercase text-slate-600">{row.original.event_type}</span>,
+      },
+      {
+        accessorKey: 'data_origin',
+        header: 'Origin',
+        cell: ({ row }) => (
+          <Badge variant={row.original.data_origin === 'live' ? 'default' : 'secondary'}>
+            {row.original.data_origin === 'live' ? 'Live' : 'Seed'}
+          </Badge>
+        ),
       },
       {
         accessorKey: 'impact',
@@ -157,6 +168,7 @@ export default function EventsPage() {
       market: (formData.get('market') as string) || undefined,
       sector: (formData.get('sector') as string) || undefined,
       type: (formData.get('type') as string) || undefined,
+      origin: (formData.get('origin') as string) || undefined,
       stance: (formData.get('stance') as string) || undefined,
       minImpact: (formData.get('minImpact') as string) || undefined,
       minConfidence: (formData.get('minConfidence') as string) || undefined,
@@ -224,6 +236,18 @@ export default function EventsPage() {
                 {stanceOptions.map((stance) => (
                   <SelectItem key={stance} value={stance}>
                     {stance}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select name="origin" defaultValue={queryParams.origin ?? ''}>
+              <SelectTrigger>
+                <SelectValue placeholder="Origin" />
+              </SelectTrigger>
+              <SelectContent>
+                {originOptions.map((origin) => (
+                  <SelectItem key={origin} value={origin}>
+                    {origin}
                   </SelectItem>
                 ))}
               </SelectContent>

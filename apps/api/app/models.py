@@ -19,6 +19,7 @@ EventType = Literal[
 Market = Literal["US", "HK", "FX", "RATES", "METALS"]
 Sector = Literal["Tech", "Industrials"]
 Stance = Literal["positive", "negative", "neutral"]
+DataOrigin = Literal["live", "seed"]
 
 
 class EventNumber(BaseModel):
@@ -59,6 +60,7 @@ class Event(BaseModel):
     impact_chain: list[str]
     evidence: list[EventEvidence]
     related_event_ids: list[str] | None = None
+    data_origin: DataOrigin = "live"
 
 
 class AssetSeriesPoint(BaseModel):

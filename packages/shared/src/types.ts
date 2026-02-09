@@ -18,6 +18,7 @@ export type EventType =
 export type Market = 'US' | 'HK' | 'FX' | 'RATES' | 'METALS';
 
 export type Sector = 'Tech' | 'Industrials';
+export type DataOrigin = 'live' | 'seed';
 
 export type EventNumber = {
   name: string;
@@ -57,6 +58,7 @@ export type Event = {
   impact_chain: string[];
   evidence: EventEvidence[];
   related_event_ids?: string[];
+  data_origin: DataOrigin;
 };
 
 export type AssetSeriesPoint = {
@@ -113,6 +115,13 @@ export type DailySummaryResponse = {
   total_news: number;
   usage?: AnalysisUsage | null;
   sources: EventEvidence[];
+};
+
+export type PaginatedEvents = {
+  items: Event[];
+  page: number;
+  pageSize: number;
+  total: number;
 };
 
 export type DashboardSummary = {

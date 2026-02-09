@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '@/lib/api';
+import { getApiTodayDate } from '@/lib/datetime';
 import type { DashboardSummary } from '@market/shared';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 const formatPct = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
 
 export default function DashboardPage() {
-  const date = new Date().toISOString().slice(0, 10);
+  const date = getApiTodayDate();
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['dashboard', date],
     queryFn: () => apiGet<DashboardSummary>('/dashboard/summary', { date }),

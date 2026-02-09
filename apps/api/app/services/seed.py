@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 import random
 
@@ -117,7 +117,12 @@ def _pick(rng: random.Random, items: list[T]) -> T:
 def _pick_many(rng: random.Random, items: list[T], minimum: int, maximum: int) -> list[T]:
     count = max(minimum, int(rng.random() * (maximum - minimum + 1)) + minimum)
     selected = [_pick(rng, items) for _ in range(count)]
-    return list(dict.fromkeys(selected))
+    unique: list[T] = []
+    for item in selected:
+        if item in unique:
+            continue
+        unique.append(item)
+    return unique
 
 
 def _make_numbers(rng: random.Random) -> list[EventNumber]:
@@ -173,7 +178,7 @@ def _make_headline(rng: random.Random) -> str:
 def build_seed_events(count: int = 80) -> list[Event]:
     rng = random.Random(42)
     events: list[Event] = []
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     for idx in range(count):
         event_time = now - timedelta(hours=6 * idx)
         ingest_time = event_time + timedelta(minutes=20)
@@ -200,6 +205,7 @@ def build_seed_events(count: int = 80) -> list[Event]:
                 impact_chain=_pick_many(rng, IMPACT_CHAINS, 3, 5),
                 evidence=_make_evidence(rng, event_time),
                 related_event_ids=[] if rng.random() > 0.7 else None,
+                data_origin="seed",
             )
         )
     return events

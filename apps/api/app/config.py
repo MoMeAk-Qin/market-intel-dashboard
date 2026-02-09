@@ -44,6 +44,8 @@ class AppConfig:
     enable_fred: bool
     enable_hkex: bool
     enable_hkma: bool
+    enable_seed_data: bool
+    seed_only_when_no_live: bool
     rss_feeds: tuple[str, ...]
     market_symbols: tuple[str, ...]
     user_agent: str
@@ -98,6 +100,8 @@ class AppConfig:
             enable_fred=_get_bool(os.getenv("ENABLE_FRED"), True),
             enable_hkex=_get_bool(os.getenv("ENABLE_HKEX"), False),
             enable_hkma=_get_bool(os.getenv("ENABLE_HKMA"), False),
+            enable_seed_data=_get_bool(os.getenv("ENABLE_SEED_DATA"), True),
+            seed_only_when_no_live=_get_bool(os.getenv("SEED_ONLY_WHEN_NO_LIVE"), True),
             rss_feeds=_get_list(os.getenv("RSS_FEEDS")),
             market_symbols=_get_list(os.getenv("MARKET_SYMBOLS")),
             user_agent=os.getenv(
