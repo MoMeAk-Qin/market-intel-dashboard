@@ -54,9 +54,19 @@ def _make_event(
 
 
 @contextmanager
-def _prepare_app(monkeypatch, events: list[Event]):
+def _prepare_app(
+    monkeypatch,
+    events: list[Event],
+    *,
+    watchlist_markets: str = "",
+    watchlist_tickers: str = "",
+    watchlist_keywords: str = "",
+):
     monkeypatch.setenv("ENABLE_VECTOR_STORE", "false")
     monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
+    monkeypatch.setenv("WATCHLIST_MARKETS", watchlist_markets)
+    monkeypatch.setenv("WATCHLIST_TICKERS", watchlist_tickers)
+    monkeypatch.setenv("WATCHLIST_KEYWORDS", watchlist_keywords)
 
     import app.api as api_module
 
@@ -143,6 +153,72 @@ def test_daily_summary_calls_analysis(monkeypatch) -> None:
         payload = resp.json()
         assert payload["answer"] == "OK"
         assert payload["total_news"] == 1
+
+
+def test_news_today_applies_watchlist_defaults(monkeypatch) -> None:
+    tz = ZoneInfo("Asia/Hong_Kong")
+    now = _fixed_now(tz)
+    us_event = _make_event(
+        headline="US AAPL headline",
+        published_at=now - timedelta(hours=2),
+        markets=["US"],
+        tickers=["AAPL"],
+    )
+    hk_event = _make_event(
+        headline="HK Tencent headline",
+        published_at=now - timedelta(hours=1),
+        markets=["HK"],
+        tickers=["0700.HK"],
+    )
+    with _prepare_app(
+        monkeypatch,
+        [us_event, hk_event],
+        watchlist_markets="US",
+        watchlist_tickers="AAPL",
+    ) as client:
+        resp = client.get("/news/today")
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["total"] == 1
+        assert payload["items"][0]["headline"] == "US AAPL headline"
+
+
+def test_daily_summary_applies_watchlist_keywords(monkeypatch) -> None:
+    tz = ZoneInfo("Asia/Hong_Kong")
+    now = _fixed_now(tz)
+    apple_event = _make_event(
+        headline="Apple demand improves",
+        published_at=now - timedelta(hours=2),
+        markets=["US"],
+        tickers=["AAPL"],
+    )
+    bank_event = _make_event(
+        headline="Bank funding update",
+        published_at=now - timedelta(hours=1),
+        markets=["US"],
+        tickers=["JPM"],
+    )
+    with _prepare_app(
+        monkeypatch,
+        [apple_event, bank_event],
+        watchlist_keywords="apple",
+    ) as client:
+        import app.api as api_module
+
+        def _fake_analyze(payload, config, vector_store=None) -> AnalysisResponse:
+            return AnalysisResponse(
+                answer="OK",
+                model="qwen3-max",
+                usage=None,
+                sources=[],
+            )
+
+        monkeypatch.setattr(api_module, "analyze_financial_sources", _fake_analyze)
+        resp = client.post("/daily/summary", json={})
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["total_news"] == 1
+        assert payload["sources"][0]["title"] == "Apple demand improves"
 
 
 def test_admin_refresh(monkeypatch) -> None:

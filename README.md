@@ -51,6 +51,10 @@ packages/shared 共享类型与 schema
 - `apps/web/.env.example`
 - `apps/api/.env.example`
 
+其中与阶段 1 相关的关键配置：
+- `WATCHLIST_MARKETS` / `WATCHLIST_TICKERS` / `WATCHLIST_KEYWORDS`：默认关注清单（用于 `/news/today` 与 `/daily/summary`）
+- `ANALYSIS_CACHE_TTL_SECONDS`：分析缓存 TTL（秒），`/analysis` 与 `/daily/summary` 复用
+
 ### `/analysis`（检索增强信源分析）
 
 - LLM：默认使用 DashScope 的 OpenAI 兼容模式调用 Qwen（需 `DASHSCOPE_API_KEY`）

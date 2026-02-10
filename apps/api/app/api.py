@@ -292,15 +292,16 @@ def create_app() -> FastAPI:
         sort: Literal["time", "impact"] = "time",
     ) -> DailyNewsResponse:
         tz = ZoneInfo(config.timezone)
-        markets = _split_csv(market)
-        ticker_list = _split_csv(tickers)
+        markets = _resolve_watchlist_values(_split_csv(market), defaults=config.watchlist_markets)
+        ticker_list = _resolve_watchlist_values(_split_csv(tickers), defaults=config.watchlist_tickers)
+        keywords = _resolve_watchlist_keywords(q, defaults=config.watchlist_keywords)
         limit = max(5, min(limit, 50))
         items = _filter_today_news(
             store.events,
             tz,
             markets=markets,
             tickers=ticker_list,
-            query=q,
+            keywords=keywords,
         )
         if sort == "impact":
             items = sorted(items, key=lambda item: (item.impact, item.event_time), reverse=True)
@@ -311,12 +312,15 @@ def create_app() -> FastAPI:
     @app.post("/daily/summary", response_model=DailySummaryResponse)
     async def daily_summary(payload: DailySummaryRequest) -> DailySummaryResponse:
         tz = ZoneInfo(config.timezone)
+        markets = _resolve_watchlist_values(payload.markets, defaults=config.watchlist_markets)
+        tickers = _resolve_watchlist_values(payload.tickers, defaults=config.watchlist_tickers)
+        keywords = _resolve_watchlist_keywords(payload.query, defaults=config.watchlist_keywords)
         items = _filter_today_news(
             store.events,
             tz,
-            markets=payload.markets,
-            tickers=payload.tickers,
-            query=payload.query,
+            markets=markets,
+            tickers=tickers,
+            keywords=keywords,
         )
         items = items[: payload.limit]
         today = datetime.now(tz).date()
@@ -529,6 +533,18 @@ def _split_csv(value: str | None) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _resolve_watchlist_values(values: list[str], *, defaults: tuple[str, ...]) -> list[str]:
+    if values:
+        return values
+    return [item for item in defaults if item]
+
+
+def _resolve_watchlist_keywords(value: str | None, *, defaults: tuple[str, ...]) -> list[str]:
+    if value and value.strip():
+        return [value.strip().lower()]
+    return [item.strip().lower() for item in defaults if item.strip()]
+
+
 def _to_tz(dt: datetime, tz: ZoneInfo) -> datetime:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
@@ -558,12 +574,12 @@ def _filter_today_news(
     *,
     markets: list[str] | None,
     tickers: list[str] | None,
-    query: str | None,
+    keywords: list[str] | None,
 ) -> list[Event]:
     now = datetime.now(tz)
     start = datetime(now.year, now.month, now.day, tzinfo=tz)
     end = start + timedelta(days=1)
-    keyword = query.lower().strip() if query else None
+    lowered_keywords = [item.lower() for item in (keywords or []) if item]
 
     filtered: list[Event] = []
     for event in events:
@@ -578,11 +594,11 @@ def _filter_today_news(
         if tickers:
             if not any(ticker in event.tickers for ticker in tickers):
                 continue
-        if keyword:
+        if lowered_keywords:
             haystack = " ".join(
                 [event.headline, event.summary, event.publisher, " ".join(event.tickers)]
             ).lower()
-            if keyword not in haystack:
+            if not any(keyword in haystack for keyword in lowered_keywords):
                 continue
         filtered.append(event)
 

@@ -8,9 +8,9 @@
 
 ## 阶段 1：每日新闻闭环（MVP+，优先级最高）
 
-- 关注清单与过滤逻辑（用户关注市场/标的/关键词；默认应用到 `/news/today`、`/daily/summary`）
-- `/analysis` 输出模板固化（结论/影响/风险/关注点 + [n] 证据引用），并做结构化校验
-- 分析结果缓存（按问题+来源 hash，带 TTL），`/analysis` 与 `/daily/summary` 复用
+- [x] 关注清单与过滤逻辑（用户关注市场/标的/关键词；默认应用到 `/news/today`、`/daily/summary`）
+- [x] `/analysis` 输出模板固化（结论/影响/风险/关注点 + [n] 证据引用），并做结构化校验
+- [x] 分析结果缓存（按问题+来源 hash，带 TTL），`/analysis` 与 `/daily/summary` 复用
 - [x] `/qa` 由规则回答升级为“检索 + Qwen”或“向量检索 + Qwen”链路
 
 验收标准 / 里程碑（含 KPI）：

@@ -46,6 +46,9 @@ class AppConfig:
     enable_hkma: bool
     enable_seed_data: bool
     seed_only_when_no_live: bool
+    watchlist_markets: tuple[str, ...]
+    watchlist_tickers: tuple[str, ...]
+    watchlist_keywords: tuple[str, ...]
     rss_feeds: tuple[str, ...]
     market_symbols: tuple[str, ...]
     user_agent: str
@@ -83,6 +86,7 @@ class AppConfig:
     chroma_collection_sources: str
     dashscope_embeddings_model: str
     analysis_top_k: int
+    analysis_cache_ttl_seconds: int
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -102,6 +106,9 @@ class AppConfig:
             enable_hkma=_get_bool(os.getenv("ENABLE_HKMA"), False),
             enable_seed_data=_get_bool(os.getenv("ENABLE_SEED_DATA"), True),
             seed_only_when_no_live=_get_bool(os.getenv("SEED_ONLY_WHEN_NO_LIVE"), True),
+            watchlist_markets=_get_list(os.getenv("WATCHLIST_MARKETS", "")),
+            watchlist_tickers=_get_list(os.getenv("WATCHLIST_TICKERS", "")),
+            watchlist_keywords=_get_list(os.getenv("WATCHLIST_KEYWORDS", "")),
             rss_feeds=_get_list(os.getenv("RSS_FEEDS")),
             market_symbols=_get_list(os.getenv("MARKET_SYMBOLS")),
             user_agent=os.getenv(
@@ -165,4 +172,5 @@ class AppConfig:
             chroma_collection_sources=os.getenv("CHROMA_COLLECTION_SOURCES", "sources"),
             dashscope_embeddings_model=os.getenv("DASHSCOPE_EMBEDDINGS_MODEL", "text-embedding-v4"),
             analysis_top_k=int(os.getenv("ANALYSIS_TOP_K", "6")),
+            analysis_cache_ttl_seconds=int(os.getenv("ANALYSIS_CACHE_TTL_SECONDS", "86400")),
         )
