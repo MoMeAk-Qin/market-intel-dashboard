@@ -139,12 +139,33 @@
 - [ ] `P8-S1-E` 新建 `apps/api/tests/test_unlisted_tracker.py`
 - [ ] `P8-S1-F` 修改 `apps/web/src/app/research/page.tsx` 支持未上市公司展示
 - [ ] `P8-S1-G` API 与前端显式区分 `source_type=seed/live`
+- [ ] `P8-S1-H` 落地“修订后 14 家未上市种子列表”（见 6.3 执行基线）
+- [ ] `P8-S1-I` 增加 `MiniMax` 预留关注条目（未上市，待后续上市后转入上市资产池）
 
 ### 6.2 验收
 
 - [ ] 至少 14 家未上市公司可查询
 - [ ] 关键事件可追溯来源
 - [ ] Seed/实时数据无混淆
+
+### 6.3 执行基线（修订后未上市种子）
+
+| 公司 | 状态 | 核心产品 | 关联概念 |
+|------|------|---------|---------|
+| OpenAI | 未上市 | GPT 系列, Sora | MSFT |
+| Anthropic | 未上市 | Claude 系列 | GOOGL |
+| ByteDance | 未上市 | 豆包大模型, 云雀 | 省广集团等 |
+| Moonshot AI | 未上市 | Kimi | 未上市 |
+| Databricks | 未上市 | 数据 AI 平台 | 未上市 |
+| Stripe | 未上市 | 支付基础设施 | 未上市 |
+| SpaceX | 未上市 | 星链, 火箭 | 未上市 |
+| Scale AI | 未上市 | 数据标注 | 未上市 |
+| Anduril | 未上市 | 国防科技 | 未上市 |
+| Figure AI | 未上市 | 人形机器人 | 未上市 |
+| 01万物（零一万物） | 未上市 | 通用大模型 | 未上市 |
+| 百川智能 | 未上市 | 通用大模型 | 未上市 |
+| 阶跃星辰 | 未上市 | 多模态大模型 | 未上市 |
+| DeepSeek | 未上市 | 推理大模型 | 未上市 |
 
 ---
 
@@ -160,12 +181,34 @@
 - [ ] `P9-S1-F` 新建 `apps/web/src/components/CorrelationMatrix.tsx`
 - [ ] `P9-S1-G` 新建 `apps/web/src/app/correlation/page.tsx`
 - [ ] `P9-S1-H` 新建 `apps/api/tests/test_correlation.py`
+- [ ] `P9-S1-I` 实现前端“方案 A/B/C”页签切换（与后端预设一一对应）
+- [ ] `P9-S1-J` 扩展科技关注资产池（美股 12 + 港股 8，见 7.3 执行基线）
 
 ### 7.2 验收
 
 - [ ] 3 套预设矩阵可返回
 - [ ] 因果链路结构化输出
 - [ ] 前端可切换预设与窗口
+
+### 7.3 执行基线（资产组合与关注池）
+
+上市科技关注池（美股）：
+`NVDA`, `MSFT`, `AAPL`, `AMZN`, `META`, `GOOGL`, `TSLA`, `AMD`, `AVGO`, `ARM`, `PLTR`, `CRM`
+
+上市科技关注池（港股）：
+`0700.HK`, `9988.HK`, `3690.HK`, `9618.HK`, `9866.HK`, `1810.HK`, `2015.HK`, `1024.HK`
+
+未上市待转入关注池：
+`MiniMax`（当前按未上市处理）
+
+方案 A（宏观核心）：
+`DXY + US10Y + US02Y + XAUUSD + NASDAQ + 0700.HK`
+
+方案 B（AI 产业链）：
+`NVDA + AMD + AVGO + MSFT + GOOGL + NASDAQ + DXY`
+
+方案 C（中美科技联动）：
+`NASDAQ + 0700.HK + DXY + US10Y + XAUUSD`
 
 ---
 

@@ -133,6 +133,25 @@
 
 建立未上市公司画像、关键事件与时间线能力，并与现有事件流对齐。
 
+### 修订后种子基线（必须落地）
+
+| 公司 | 状态 | 核心产品 | 关联概念 |
+|------|------|---------|---------|
+| OpenAI | 未上市 | GPT 系列, Sora | MSFT |
+| Anthropic | 未上市 | Claude 系列 | GOOGL |
+| ByteDance | 未上市 | 豆包大模型, 云雀 | 省广集团等 |
+| Moonshot AI | 未上市 | Kimi | 未上市 |
+| Databricks | 未上市 | 数据 AI 平台 | 未上市 |
+| Stripe | 未上市 | 支付基础设施 | 未上市 |
+| SpaceX | 未上市 | 星链, 火箭 | 未上市 |
+| Scale AI | 未上市 | 数据标注 | 未上市 |
+| Anduril | 未上市 | 国防科技 | 未上市 |
+| Figure AI | 未上市 | 人形机器人 | 未上市 |
+| 01万物（零一万物） | 未上市 | 通用大模型 | 未上市 |
+| 百川智能 | 未上市 | 通用大模型 | 未上市 |
+| 阶跃星辰 | 未上市 | 多模态大模型 | 未上市 |
+| DeepSeek | 未上市 | 推理大模型 | 未上市 |
+
 ### 文件变更
 
 | 操作 | 文件路径 | 说明 |
@@ -147,10 +166,12 @@
 ### 可执行步骤
 
 1. 在 `models.py` 增加：`UnlistedCompany`、`UnlistedEvent`、`UnlistedCompanyResponse`。
+   - `UnlistedCompany` 至少包含：`company_id`, `name`, `status`, `core_products`, `related_concepts`, `description`。
 2. 在 `unlisted_tracker.py` 实现：
    - 公司种子加载
    - 事件匹配（实体 + 事件类型）
    - 查询接口
+   - 按“修订后种子基线”内置 14 家初始公司，支持后续增量维护。
 3. 在 `ingestion.py` 每轮处理后调用 `sync_from_events(...)`。
 4. 在 `api.py` 增加：
    - `GET /unlisted/companies`
@@ -186,7 +207,11 @@
 
 ### 可执行步骤
 
-1. 在 `config.py` 定义预设组合：`MACRO_CORE`、`AI_SUPPLY_CHAIN`、`CROSS_BORDER_TECH`。
+1. 在 `config.py` 定义预设组合（与前端页签一一对应）：
+   - 方案 A（宏观核心）`MACRO_CORE = [DXY, US10Y, US02Y, XAUUSD, NASDAQ, 0700.HK]`
+   - 方案 B（AI 产业链）`AI_SUPPLY_CHAIN = [NVDA, AMD, AVGO, MSFT, GOOGL, NASDAQ, DXY]`
+   - 方案 C（中美科技联动）`CROSS_BORDER_TECH = [NASDAQ, 0700.HK, DXY, US10Y, XAUUSD]`
+   - 若 `US02Y` 暂无实时行情，必须提供降级策略（回退/跳过并给出前端提示）。
 2. 实现热度服务：价格异动、新闻热度、综合评分。
 3. 实现相关性服务：7/30/90 天矩阵与两两相关查询。
 4. 实现因果服务：输入事件，输出分层传导链与证据引用。
@@ -194,7 +219,7 @@
    - `GET /tech/heatmap`
    - `GET /correlation/matrix`
    - `POST /correlation/analyze`
-6. 前端新增矩阵页，支持预设切换和窗口切换。
+6. 前端新增矩阵页，支持“方案 A/B/C”页签切换与窗口切换。
 
 ### 验收
 
