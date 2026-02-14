@@ -1,5 +1,8 @@
 # TODO 清单（结合代码核对结果，更新于 2026-02-09）
 
+实施清单入口：`docs/implementation-checklist.md`  
+后续开发执行以 `docs/implementation-checklist.md` 为主；`docs/todo.md` 用于阶段目标与 KPI 复盘。
+
 ## 阶段 0：阻塞修复与一致性（必须先做）
 
 - [x] 修复 `/events` 时间过滤与排序在混合时区输入下的运行时问题（后端）

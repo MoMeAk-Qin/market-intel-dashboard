@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiGet } from '@/lib/api';
@@ -39,7 +39,7 @@ const originOptions = ['all', 'live', 'seed'] as const;
 
 const formatTime = (value: string) => formatApiDateTime(value);
 
-export default function EventsPage() {
+function EventsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -407,5 +407,46 @@ export default function EventsPage() {
         </DrawerContent>
       </Drawer>
     </div>
+  );
+}
+
+function EventsPageFallback() {
+  return (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <h1 className="text-3xl font-semibold">Event Hub</h1>
+        <p className="text-sm text-slate-600">Loading event filters and feed...</p>
+      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Filters</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-3">
+            {Array.from({ length: 9 }).map((_, index) => (
+              <Skeleton key={index} className="h-10" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Event Feed</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <Skeleton key={index} className="h-14" />
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export default function EventsPage() {
+  return (
+    <Suspense fallback={<EventsPageFallback />}>
+      <EventsPageContent />
+    </Suspense>
   );
 }
