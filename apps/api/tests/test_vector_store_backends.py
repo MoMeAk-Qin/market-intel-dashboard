@@ -71,3 +71,19 @@ def test_vector_store_factory_rejects_unknown_backend(monkeypatch) -> None:
     config = AppConfig.from_env()
     # config fallback should normalize to chroma
     assert config.vector_backend == "chroma"
+
+
+def test_vector_backend_accepts_pgvector(monkeypatch) -> None:
+    monkeypatch.setenv("ENABLE_VECTOR_STORE", "true")
+    monkeypatch.setenv("VECTOR_BACKEND", "pgvector")
+    config = AppConfig.from_env()
+    assert config.vector_backend == "pgvector"
+
+
+def test_pgvector_backend_requires_dsn(monkeypatch) -> None:
+    monkeypatch.setenv("ENABLE_VECTOR_STORE", "true")
+    monkeypatch.setenv("VECTOR_BACKEND", "pgvector")
+    monkeypatch.delenv("PGVECTOR_DSN", raising=False)
+    config = AppConfig.from_env()
+    with pytest.raises(RuntimeError, match="PGVECTOR_DSN"):
+        create_vector_store(config)

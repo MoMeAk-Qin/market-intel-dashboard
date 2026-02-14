@@ -66,6 +66,55 @@ export type AssetSeriesPoint = {
   value: number;
 };
 
+export type QuotePoint = {
+  time: string;
+  value: number;
+};
+
+export type QuoteSnapshot = {
+  asset_id: string;
+  price: number;
+  change?: number | null;
+  change_pct?: number | null;
+  currency?: string | null;
+  as_of: string;
+  source: string;
+  is_fallback: boolean;
+};
+
+export type QuoteSeries = {
+  asset_id: string;
+  range: '1D' | '1W' | '1M' | '1Y';
+  source: string;
+  is_fallback: boolean;
+  points: QuotePoint[];
+};
+
+export type MetricDomain = 'quote' | 'macro' | 'fundamental';
+
+export type AssetMetric = {
+  metric_id: string;
+  domain: MetricDomain;
+  label: string;
+  value: number;
+  unit: string;
+  as_of: string;
+  source: string;
+  is_fallback: boolean;
+};
+
+export type AssetProfile = {
+  asset_id: string;
+  name: string;
+  market: Market;
+  range: '1D' | '1W' | '1M' | '1Y';
+  schema_version: string;
+  quote: QuoteSnapshot;
+  series: QuoteSeries;
+  metrics: AssetMetric[];
+  recent_events: Event[];
+};
+
 export type QAResponse = {
   answer: string;
   evidence: EventEvidence[];

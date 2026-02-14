@@ -3,11 +3,23 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from typing import Any
+from typing import Any, TypedDict, Unpack
 
 import httpx
 
 RETRY_STATUS = {429, 500, 502, 503, 504}
+
+
+class RequestOptions(TypedDict, total=False):
+    params: httpx.QueryParamTypes
+    headers: httpx.HeaderTypes
+    cookies: httpx.CookieTypes
+    content: httpx.RequestContent | None
+    data: httpx.RequestData | None
+    files: httpx.RequestFiles | None
+    json: Any
+    timeout: httpx.TimeoutTypes
+    extensions: dict[str, Any]
 
 
 async def request_with_retry(
@@ -18,7 +30,7 @@ async def request_with_retry(
     retries: int,
     backoff: float,
     logger: logging.Logger,
-    **kwargs: Any,
+    **kwargs: Unpack[RequestOptions],
 ) -> httpx.Response:
     attempt = 0
     while True:

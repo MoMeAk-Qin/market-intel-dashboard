@@ -45,6 +45,7 @@ def _make_event(*, event_id: str, headline: str, data_origin: DataOrigin, hour: 
 
 def _base_env(monkeypatch) -> None:
     monkeypatch.setenv("ENABLE_VECTOR_STORE", "false")
+    monkeypatch.setenv("ENABLE_MARKET_QUOTES", "false")
     monkeypatch.setenv("ENABLE_RSS", "false")
     monkeypatch.setenv("ENABLE_EDGAR", "false")
     monkeypatch.setenv("ENABLE_H10", "false")

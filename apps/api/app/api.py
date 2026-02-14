@@ -17,6 +17,9 @@ from fastapi.responses import StreamingResponse
 from .config import AppConfig
 from .logging import setup_logging
 from .models import (
+    AssetMetric,
+    AssetProfile,
+    AssetSeriesPoint,
     HealthResponse,
     DashboardSummary,
     Event,
@@ -36,6 +39,9 @@ from .models import (
     TimelineLane,
     EarningsCard,
     Metric,
+    QuotePoint,
+    QuoteSeries,
+    QuoteSnapshot,
     RefreshReport,
     ResearchReport,
     FactCheck,
@@ -51,8 +57,21 @@ from .services.vector_store import (
     create_vector_store,
 )
 from .services.seed import ASSET_CATALOG, build_asset_series
+from .sources.quotes import (
+    fetch_quote_series,
+    fetch_quote_snapshots,
+    supports_asset_quotes,
+)
 
 ASSET_MARKET_MAP = {item["id"]: item["market"] for item in ASSET_CATALOG}
+_ASSET_PRICE_UNIT = {
+    "AAPL": "USD",
+    "0700.HK": "HKD",
+    "XAUUSD": "USD",
+    "NASDAQ": "index",
+    "DXY": "index",
+    "US10Y": "pct",
+}
 RangeKey = Literal["1D", "1W", "1M", "1Y"]
 _RANGE_KEYS: tuple[RangeKey, ...] = ("1D", "1W", "1M", "1Y")
 _RANGE_HINT = "Use one of: 1D, 1W, 1M, 1Y."
@@ -141,7 +160,7 @@ def create_app() -> FastAPI:
     async def dashboard_summary(date_str: str | None = Query(default=None, alias="date")) -> DashboardSummary:
         tz = ZoneInfo(config.timezone)
         target_date = _parse_date(date_str) if date_str else _today_in_tz(tz)
-        return build_dashboard_summary(target_date, store.events)
+        return build_dashboard_summary(target_date, store.events, store.quotes)
 
     @app.get("/events", response_model=PaginatedEvents)
     async def list_events(
@@ -192,6 +211,39 @@ def create_app() -> FastAPI:
                 return event
         raise HTTPException(status_code=404, detail="Event not found")
 
+    @app.get("/assets/{asset_id}/quote", response_model=QuoteSnapshot)
+    async def asset_quote(asset_id: str) -> QuoteSnapshot:
+        asset = next((item for item in ASSET_CATALOG if item["id"] == asset_id), None)
+        if not asset:
+            raise HTTPException(status_code=404, detail="Asset not found")
+        return await _load_asset_quote(
+            config=config,
+            store=store,
+            asset_id=asset_id,
+            base=asset["base"],
+            logger=logger,
+        )
+
+    @app.get("/assets/{asset_id}/series", response_model=QuoteSeries)
+    async def asset_series(asset_id: str, range: str = "1M") -> QuoteSeries:
+        asset = next((item for item in ASSET_CATALOG if item["id"] == asset_id), None)
+        if not asset:
+            raise HTTPException(status_code=404, detail="Asset not found")
+        try:
+            range_key = _normalize_range(range)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid range: {range}. {_RANGE_HINT}",
+            )
+        return await _load_asset_series(
+            config=config,
+            asset_id=asset_id,
+            range_key=range_key,
+            base=asset["base"],
+            logger=logger,
+        )
+
     @app.get("/assets/{asset_id}/chart")
     async def asset_chart(asset_id: str, range: str = "1M") -> dict[str, object]:
         asset = next((item for item in ASSET_CATALOG if item["id"] == asset_id), None)
@@ -204,8 +256,24 @@ def create_app() -> FastAPI:
                 status_code=400,
                 detail=f"Invalid range: {range}. {_RANGE_HINT}",
             )
-        series = build_asset_series(asset["base"], range_key)
-        return {"assetId": asset_id, "range": range_key, "series": series}
+        quote_series = await _load_asset_series(
+            config=config,
+            asset_id=asset_id,
+            range_key=range_key,
+            base=asset["base"],
+            logger=logger,
+        )
+        series: list[AssetSeriesPoint] = [
+            AssetSeriesPoint(date=point.time.date(), value=point.value)
+            for point in quote_series.points
+        ]
+        return {
+            "assetId": asset_id,
+            "range": range_key,
+            "series": series,
+            "source": quote_series.source,
+            "isFallback": quote_series.is_fallback,
+        }
 
     @app.get("/assets/{asset_id}/events")
     async def asset_events(asset_id: str, range: str = "1M") -> dict[str, object]:
@@ -220,13 +288,63 @@ def create_app() -> FastAPI:
                 detail=f"Invalid range: {range}. {_RANGE_HINT}",
             )
         days = _range_to_days(range_key)
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         items = [
             event
             for event in store.events
             if event.event_time >= cutoff and market in event.markets
         ][:12]
         return {"assetId": asset_id, "items": items}
+
+    @app.get("/assets/{asset_id}/profile", response_model=AssetProfile)
+    async def asset_profile(asset_id: str, range: str = "1M") -> AssetProfile:
+        asset = next((item for item in ASSET_CATALOG if item["id"] == asset_id), None)
+        if not asset:
+            raise HTTPException(status_code=404, detail="Asset not found")
+        try:
+            range_key = _normalize_range(range)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid range: {range}. {_RANGE_HINT}",
+            )
+
+        quote = await _load_asset_quote(
+            config=config,
+            store=store,
+            asset_id=asset_id,
+            base=asset["base"],
+            logger=logger,
+        )
+        series = await _load_asset_series(
+            config=config,
+            asset_id=asset_id,
+            range_key=range_key,
+            base=asset["base"],
+            logger=logger,
+        )
+
+        market = ASSET_MARKET_MAP.get(asset_id)
+        if market is None:
+            raise HTTPException(status_code=404, detail="Asset not found")
+        days = _range_to_days(range_key)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        recent_events = [
+            event
+            for event in store.events
+            if event.event_time >= cutoff and market in event.markets
+        ][:12]
+        metrics = _build_asset_metrics(asset_id=asset_id, market=market, quote=quote)
+        return AssetProfile(
+            asset_id=asset_id,
+            name=asset["name"],
+            market=market,
+            range=range_key,
+            quote=quote,
+            series=series,
+            metrics=metrics,
+            recent_events=recent_events,
+        )
 
     @app.get("/research/company/{ticker}", response_model=ResearchResponse)
     async def research_company(ticker: str) -> ResearchResponse:
@@ -488,7 +606,11 @@ def _schedule_jobs(
     )
 
 
-def build_dashboard_summary(target_date: date, events: list[Event]) -> DashboardSummary:
+def build_dashboard_summary(
+    target_date: date,
+    events: list[Event],
+    quotes: dict[str, QuoteSnapshot] | None = None,
+) -> DashboardSummary:
     major = sum(1 for event in events if event.impact >= 80)
     macro = sum(1 for event in events if event.event_type in {"macro_release", "rate_decision"})
     company = sum(1 for event in events if event.event_type in {"earnings", "guidance", "buyback", "mna"})
@@ -496,8 +618,13 @@ def build_dashboard_summary(target_date: date, events: list[Event]) -> Dashboard
 
     key_assets: list[KeyAsset] = []
     for idx, asset in enumerate(ASSET_CATALOG):
-        change_pct = round(((idx + 1) * 0.3) - 0.6, 2)
-        value = round(asset["base"] * (1 + change_pct / 100), 2)
+        snapshot = quotes.get(asset["id"]) if quotes else None
+        if snapshot is not None:
+            value = round(snapshot.price, 2)
+            change_pct = round(snapshot.change_pct or 0.0, 2)
+        else:
+            change_pct = round(((idx + 1) * 0.3) - 0.6, 2)
+            value = round(asset["base"] * (1 + change_pct / 100), 2)
         key_assets.append(
             KeyAsset(
                 id=asset["id"],
@@ -599,6 +726,142 @@ def _range_to_days(range_key: RangeKey) -> int:
     if range_key == "1M":
         return 30
     return 365
+
+
+async def _load_asset_series(
+    *,
+    config: AppConfig,
+    asset_id: str,
+    range_key: RangeKey,
+    base: float,
+    logger: logging.Logger,
+) -> QuoteSeries:
+    if config.enable_market_quotes and supports_asset_quotes(asset_id):
+        try:
+            series = await fetch_quote_series(config, asset_id=asset_id, range_key=range_key)
+        except Exception as exc:
+            logger.warning(
+                "asset_series_fetch_failed asset=%s range=%s error=%s",
+                asset_id,
+                range_key,
+                exc,
+            )
+        else:
+            if series is not None and series.points:
+                return series
+    return _build_fallback_quote_series(asset_id=asset_id, base=base, range_key=range_key)
+
+
+async def _load_asset_quote(
+    *,
+    config: AppConfig,
+    store: InMemoryStore,
+    asset_id: str,
+    base: float,
+    logger: logging.Logger,
+) -> QuoteSnapshot:
+    cached = store.quotes.get(asset_id)
+    if cached is not None:
+        return cached
+    if config.enable_market_quotes and supports_asset_quotes(asset_id):
+        try:
+            snapshots = await fetch_quote_snapshots(config, asset_ids=[asset_id])
+        except Exception as exc:
+            logger.warning("asset_quote_fetch_failed asset=%s error=%s", asset_id, exc)
+        else:
+            snapshot = snapshots.get(asset_id)
+            if snapshot is not None:
+                store.upsert_quote(snapshot)
+                return snapshot
+    return _build_fallback_quote(asset_id=asset_id, base=base)
+
+
+def _build_fallback_quote(asset_id: str, base: float) -> QuoteSnapshot:
+    baseline = build_asset_series(base, "1W")
+    latest = baseline[-1].value if baseline else base
+    previous = baseline[-2].value if len(baseline) > 1 else latest
+    change = latest - previous
+    change_pct = (change / previous * 100.0) if previous else None
+    return QuoteSnapshot(
+        asset_id=asset_id,
+        price=round(latest, 6),
+        change=round(change, 6),
+        change_pct=None if change_pct is None else round(change_pct, 6),
+        currency=None,
+        as_of=datetime.now(timezone.utc),
+        source="seed",
+        is_fallback=True,
+    )
+
+
+def _build_fallback_quote_series(asset_id: str, base: float, range_key: RangeKey) -> QuoteSeries:
+    seed_series = build_asset_series(base, range_key)
+    points = [
+        QuotePoint(
+            time=datetime(point.date.year, point.date.month, point.date.day, tzinfo=timezone.utc),
+            value=point.value,
+        )
+        for point in seed_series
+    ]
+    return QuoteSeries(
+        asset_id=asset_id,
+        range=range_key,
+        source="seed",
+        is_fallback=True,
+        points=points,
+    )
+
+
+def _build_asset_metrics(*, asset_id: str, market: str, quote: QuoteSnapshot) -> list[AssetMetric]:
+    if market == "RATES":
+        price_unit = "pct"
+    else:
+        price_unit = quote.currency or _ASSET_PRICE_UNIT.get(asset_id, "value")
+    metrics: list[AssetMetric] = [
+        AssetMetric(
+            metric_id="spot_price",
+            domain="quote",
+            label="Spot Price",
+            value=round(quote.price, 6),
+            unit=price_unit,
+            as_of=quote.as_of,
+            source=quote.source,
+            is_fallback=quote.is_fallback,
+        )
+    ]
+    if quote.change is not None:
+        if market == "RATES":
+            change_value = round(quote.change * 100.0, 6)
+            change_unit = "bps"
+        else:
+            change_value = round(quote.change, 6)
+            change_unit = price_unit
+        metrics.append(
+            AssetMetric(
+                metric_id="change_abs",
+                domain="quote",
+                label="Absolute Change",
+                value=change_value,
+                unit=change_unit,
+                as_of=quote.as_of,
+                source=quote.source,
+                is_fallback=quote.is_fallback,
+            )
+        )
+    if quote.change_pct is not None:
+        metrics.append(
+            AssetMetric(
+                metric_id="change_pct",
+                domain="quote",
+                label="Change Percent",
+                value=round(quote.change_pct, 6),
+                unit="pct",
+                as_of=quote.as_of,
+                source=quote.source,
+                is_fallback=quote.is_fallback,
+            )
+        )
+    return metrics
 
 
 def _map_lane(event: Event) -> LaneKey:

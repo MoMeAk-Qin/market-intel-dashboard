@@ -68,6 +68,56 @@ class AssetSeriesPoint(BaseModel):
     value: float
 
 
+class QuotePoint(BaseModel):
+    time: datetime
+    value: float
+
+
+class QuoteSnapshot(BaseModel):
+    asset_id: str
+    price: float
+    change: float | None = None
+    change_pct: float | None = None
+    currency: str | None = None
+    as_of: datetime
+    source: str
+    is_fallback: bool = False
+
+
+class QuoteSeries(BaseModel):
+    asset_id: str
+    range: Literal["1D", "1W", "1M", "1Y"]
+    source: str
+    is_fallback: bool = False
+    points: list[QuotePoint] = Field(default_factory=list)
+
+
+MetricDomain = Literal["quote", "macro", "fundamental"]
+
+
+class AssetMetric(BaseModel):
+    metric_id: str
+    domain: MetricDomain
+    label: str
+    value: float
+    unit: str
+    as_of: datetime
+    source: str
+    is_fallback: bool = False
+
+
+class AssetProfile(BaseModel):
+    asset_id: str
+    name: str
+    market: Market
+    range: Literal["1D", "1W", "1M", "1Y"]
+    schema_version: str = "asset-metrics-v1"
+    quote: QuoteSnapshot
+    series: QuoteSeries
+    metrics: list[AssetMetric] = Field(default_factory=list)
+    recent_events: list[Event] = Field(default_factory=list)
+
+
 class MetricPoint(BaseModel):
     provider: str
     series_id: str
@@ -157,6 +207,7 @@ class RefreshReport(BaseModel):
     total_events: int
     live_events: int
     seed_events: int
+    quote_assets: int = 0
     source_errors: list[str] = Field(default_factory=list)
 
 

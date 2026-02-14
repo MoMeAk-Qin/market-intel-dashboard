@@ -83,7 +83,12 @@ class AppConfig:
     qwen_temperature: float
     qwen_max_tokens: int
     enable_vector_store: bool
-    vector_backend: Literal["chroma", "simple"]
+    vector_backend: Literal["chroma", "simple", "pgvector"]
+    pgvector_dsn: str
+    pgvector_table: str
+    enable_market_quotes: bool
+    quotes_api_url: str
+    quotes_chart_api_base_url: str
     chroma_path: str
     chroma_collection_sources: str
     dashscope_embeddings_model: str
@@ -171,6 +176,17 @@ class AppConfig:
             qwen_max_tokens=int(os.getenv("QWEN_MAX_TOKENS", "512")),
             enable_vector_store=_get_bool(os.getenv("ENABLE_VECTOR_STORE"), True),
             vector_backend=_get_vector_backend(os.getenv("VECTOR_BACKEND", "chroma")),
+            pgvector_dsn=os.getenv("PGVECTOR_DSN", ""),
+            pgvector_table=os.getenv("PGVECTOR_TABLE", "event_evidence_vectors"),
+            enable_market_quotes=_get_bool(os.getenv("ENABLE_MARKET_QUOTES"), True),
+            quotes_api_url=os.getenv(
+                "QUOTES_API_URL",
+                "https://query1.finance.yahoo.com/v7/finance/quote",
+            ),
+            quotes_chart_api_base_url=os.getenv(
+                "QUOTES_CHART_API_BASE_URL",
+                "https://query1.finance.yahoo.com/v8/finance/chart",
+            ),
             chroma_path=os.getenv("CHROMA_PATH", "apps/api/data/chroma"),
             chroma_collection_sources=os.getenv("CHROMA_COLLECTION_SOURCES", "sources"),
             dashscope_embeddings_model=os.getenv("DASHSCOPE_EMBEDDINGS_MODEL", "text-embedding-v4"),
@@ -179,10 +195,12 @@ class AppConfig:
         )
 
 
-def _get_vector_backend(value: str | None) -> Literal["chroma", "simple"]:
+def _get_vector_backend(value: str | None) -> Literal["chroma", "simple", "pgvector"]:
     normalized = (value or "chroma").strip().lower()
     if normalized == "chroma":
         return "chroma"
     if normalized == "simple":
         return "simple"
+    if normalized == "pgvector":
+        return "pgvector"
     return "chroma"

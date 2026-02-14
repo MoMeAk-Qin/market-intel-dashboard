@@ -38,6 +38,9 @@ packages/shared 共享类型与 schema
 - `GET /events`（支持 `origin=live|seed|all`）
 - `GET /events/:id`
 - `GET /assets/:assetId/chart?range=1D|1W|1M|1Y`
+- `GET /assets/:assetId/quote`
+- `GET /assets/:assetId/series?range=1D|1W|1M|1Y`
+- `GET /assets/:assetId/profile?range=1D|1W|1M|1Y`
 - `GET /assets/:assetId/events?range=1D|1W|1M|1Y`
 - `GET /research/company/:ticker`
 - `GET /news/today`
@@ -58,7 +61,9 @@ packages/shared 共享类型与 schema
 ### `/analysis`（检索增强信源分析）
 
 - LLM：默认使用 DashScope 的 OpenAI 兼容模式调用 Qwen（需 `DASHSCOPE_API_KEY`）
-- 检索增强：默认启用 Chroma 本地向量库（目录 `apps/api/data/chroma`）
+- 检索增强：支持 `VECTOR_BACKEND=simple|chroma|pgvector`（默认 `chroma`）
+  - `chroma`：本地向量库（目录 `apps/api/data/chroma`）
+  - `pgvector`：Postgres + pgvector（需配置 `PGVECTOR_DSN` / `PGVECTOR_TABLE`）
   - Embedding 使用 DashScope 文本向量（默认 `text-embedding-v4`，需 `DASHSCOPE_API_KEY`）
   - 若未配置 `DASHSCOPE_API_KEY`，`/analysis` 将直接报错（无法调用 LLM/embedding）
 
@@ -82,6 +87,6 @@ uv run --project apps/api apps/api/tools/hkma_discovery.py
 
 ## TODO
 
-- 接入 Postgres + pgvector 作为持久化存储
+- 增加 pgvector 迁移脚本与索引优化
 - 增加向量检索与多维过滤策略
 - 引入真实行情与财务数据数据源
