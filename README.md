@@ -1,92 +1,164 @@
 # Market Intel Dashboard
 
-港股 / 美股 / 外汇 / 贵金属 / 债市分析系统 MVP。包含 Dashboard、Event Hub、Asset Detail、Research、Search & Q&A 五个页面，前端通过 `NEXT_PUBLIC_API_BASE_URL` 连接后端接口。后端基于 Python（FastAPI），支持每日早晚两次更新的免费数据源测试版。
+多资产市场情报系统（港股/美股/外汇/贵金属/利率），提供事件聚合、行情快照、检索增强分析与前端可视化。
+
+- 前端：Next.js 15 + React 19（`apps/web`）
+- 后端：FastAPI + uv（`apps/api`）
+- 共享类型：`packages/shared`
+
+## 当前状态（2026-02-14）
+
+已完成阶段：0~5。当前主线进入阶段 99 与阶段 6~10。
+
+- 已完成：阻塞修复、新闻闭环、前端对接、HKMA 标准化、任务编排、真实行情接入、Quote 模型统一、E2E 行情链路。
+- 进行中：阶段99（静态类型告警收口）。
+- 待执行：阶段6~10（pgvector 优化、Research 真实化、未上市情报、关联分析、多模型与定时报告）。
+
+开发计划唯一入口：`docs/todo.md`
+
+## 关键能力（当前可用）
+
+1. Dashboard 摘要、事件流检索与筛选（支持 `origin=live|seed|all`）。
+2. 资产详情链路：`quote/series/chart/profile/events`，支持真实行情优先与回退。
+3. `/qa` 与 `/analysis`：检索增强 + Qwen（有 Key 时），无 Key 时 QA 回退为规则摘要。
+4. `/analysis/tasks` 异步任务与 SSE 流式状态订阅。
+5. `/news/today` 与 `/daily/summary` 支持关注清单默认过滤。
+
+## 能力边界（请先了解）
+
+1. `/research/company/{ticker}` 目前仍是过渡实现（研究卡片+示例报告），阶段7会升级为真实研究链路。
+2. 向量后端支持 `simple|chroma|pgvector`，其中 `pgvector` 为可选开关能力，阶段6继续完善索引与运维脚本。
+3. Seed 与 Live 数据会并存；前后端正持续推进来源显式化（`source_type`）。
 
 ## 快速开始
 
-> 推荐 Python 3.12（本项目依赖 ChromaDB，当前与 Python 3.12 兼容性最佳）
+以下命令均在仓库根目录执行。
+
+### 1) 依赖要求
+
+- Node.js（建议 20+）
+- pnpm 9
+- uv
+- Python 3.12（强制，见 `apps/api/pyproject.toml`）
+
+### 2) 安装依赖
 
 ```bash
 pnpm i
 uv sync --project apps/api
+```
+
+### 3) 启动
+
+```bash
 pnpm dev
 ```
 
-- Web: http://localhost:3000
-- API: http://localhost:4000
+- Web: [http://localhost:3000](http://localhost:3000)
+- API: [http://localhost:4000](http://localhost:4000)
 
-## 目录结构
+补充：默认配置即可本地运行；如需启用 LLM/向量增强，请设置环境变量（见下文）。
 
+## 常用命令
+
+```bash
+# 仅启动 API
+pnpm dev:api
+
+# 仅启动 Web
+pnpm dev:web
+
+# 后端测试
+uv run --project apps/api pytest
+
+# 前端契约测试
+pnpm -C apps/web test:contract
+
+# 前端 lint
+pnpm lint
 ```
-apps/web        Next.js App Router + React Query
-apps/api        FastAPI (免费数据源测试版)
-packages/shared 共享类型与 schema
 
-## 数据源映射
+## 关键环境变量
 
-详见 `docs/data-sources.md`。
+参考：`apps/api/.env.example`、`apps/web/.env.example`
 
-## 观测与重试
+后端常用项：
 
-日志默认写入 `apps/api/data/api.log`，HTTP 请求重试次数与退避时间可在 `apps/api/.env.example` 中调整。
-```
+- `DASHSCOPE_API_KEY`：启用 Qwen/embedding（`/analysis` 强依赖）。
+- `VECTOR_BACKEND=chroma|simple|pgvector`：向量检索后端。
+- `PGVECTOR_DSN` / `PGVECTOR_TABLE`：`pgvector` 后端配置。
+- `ENABLE_LIVE_SOURCES`：是否开启实时源抓取。
+- `WATCHLIST_MARKETS` / `WATCHLIST_TICKERS` / `WATCHLIST_KEYWORDS`：默认关注清单。
+- `ANALYSIS_CACHE_TTL_SECONDS`：分析缓存 TTL。
 
-## API 列表
+前端常用项：
+
+- `NEXT_PUBLIC_API_BASE_URL`（默认 `http://localhost:4000`）
+- `NEXT_PUBLIC_APP_TIMEZONE`（默认 `Asia/Hong_Kong`）
+
+## API 概览
+
+### 系统与摘要
 
 - `GET /health`
 - `GET /dashboard/summary?date=YYYY-MM-DD`
-- `GET /events`（支持 `origin=live|seed|all`）
-- `GET /events/:id`
-- `GET /assets/:assetId/chart?range=1D|1W|1M|1Y`
-- `GET /assets/:assetId/quote`
-- `GET /assets/:assetId/series?range=1D|1W|1M|1Y`
-- `GET /assets/:assetId/profile?range=1D|1W|1M|1Y`
-- `GET /assets/:assetId/events?range=1D|1W|1M|1Y`
-- `GET /research/company/:ticker`
-- `GET /news/today`
-- `POST /qa`
-- `POST /analysis`
-- `POST /daily/summary`
 - `POST /admin/refresh`
 
-## 环境变量
+### 事件
 
-- `apps/web/.env.example`
-- `apps/api/.env.example`
+- `GET /events`
+- `GET /events/{event_id}`
 
-其中与阶段 1 相关的关键配置：
-- `WATCHLIST_MARKETS` / `WATCHLIST_TICKERS` / `WATCHLIST_KEYWORDS`：默认关注清单（用于 `/news/today` 与 `/daily/summary`）
-- `ANALYSIS_CACHE_TTL_SECONDS`：分析缓存 TTL（秒），`/analysis` 与 `/daily/summary` 复用
+### 资产
 
-### `/analysis`（检索增强信源分析）
+- `GET /assets/{asset_id}/quote`
+- `GET /assets/{asset_id}/series?range=1D|1W|1M|1Y`
+- `GET /assets/{asset_id}/chart?range=1D|1W|1M|1Y`
+- `GET /assets/{asset_id}/events?range=1D|1W|1M|1Y`
+- `GET /assets/{asset_id}/profile?range=1D|1W|1M|1Y`
 
-- LLM：默认使用 DashScope 的 OpenAI 兼容模式调用 Qwen（需 `DASHSCOPE_API_KEY`）
-- 检索增强：支持 `VECTOR_BACKEND=simple|chroma|pgvector`（默认 `chroma`）
-  - `chroma`：本地向量库（目录 `apps/api/data/chroma`）
-  - `pgvector`：Postgres + pgvector（需配置 `PGVECTOR_DSN` / `PGVECTOR_TABLE`）
-  - Embedding 使用 DashScope 文本向量（默认 `text-embedding-v4`，需 `DASHSCOPE_API_KEY`）
-  - 若未配置 `DASHSCOPE_API_KEY`，`/analysis` 将直接报错（无法调用 LLM/embedding）
+### 研究与分析
 
-## 数据更新策略
+- `GET /research/company/{ticker}`
+- `POST /qa`
+- `POST /analysis`
+- `POST /analysis/tasks`
+- `GET /analysis/tasks`
+- `GET /analysis/tasks/{task_id}`
+- `GET /analysis/tasks/stream`
 
-- 时区：Asia/Hong_Kong
-- 早/晚各一次（默认 08:30 / 18:30）
-- 可通过 `ENABLE_LIVE_SOURCES=true` 启用 RSS 采集
+### 新闻与日报
 
-## HKMA 自动发现工具
+- `GET /news/today`
+- `POST /daily/summary`
 
-```bash
-uv run --project apps/api apps/api/tools/hkma_discovery.py
+## 目录结构
+
+```text
+apps/web          Next.js 15 + React 19 前端
+apps/api          FastAPI 服务与数据采集
+packages/shared   前后端共享类型
+docs              规划、路线图、评估与 TODO
 ```
 
-- 入口：HKMA apidocs Market Data and Statistics
-- 输出：
-  - `apps/api/app/sources/hkma_catalog.json`
-  - `apps/api/app/sources/hkma_endpoints.env`
-  - `apps/api/app/sources/hkma_units.json`
+## 文档协作规则（必须）
 
-## TODO
+1. 开发计划与状态只在 `docs/todo.md` 维护（Single Source of Truth）。
+2. 执行任务时必须同步参看：
+   - `docs/master-plan-v2.md`（目标边界与验收口径）
+   - `docs/implementation-roadmap-v2.md`（文件级步骤）
+   - `docs/feasibility-assessment.md`（风险与前提）
+3. 若文档冲突，按 `docs/todo.md` 中“AI Agent 同步参看规则”处理。
 
-- 增加 pgvector 迁移脚本与索引优化
-- 增加向量检索与多维过滤策略
-- 引入真实行情与财务数据数据源
+## 数据源与补充文档
+
+- 数据源映射：`docs/data-sources.md`
+- HKMA 端点梳理：`docs/hkma-endpoints.md`
+- 架构说明：`docs/architecture.md`
+
+## 下一步（与 TODO 一致）
+
+1. 阶段99：静态类型告警收口并纳入 CI。
+2. 阶段6：Postgres + pgvector 索引优化与运维脚本。
+3. 阶段7：Research 页面真实数据链路。
+4. 阶段8~10：未上市情报、关联分析、多模型与定时报告。
