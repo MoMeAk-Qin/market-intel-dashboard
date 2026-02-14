@@ -1,97 +1,179 @@
-# TODO 清单（结合代码核对结果，更新于 2026-02-09）
+# TODO 清单（唯一开发计划入口，v2.2）
 
-实施清单入口：`docs/implementation-checklist.md`  
-后续开发执行以 `docs/implementation-checklist.md` 为主；`docs/todo.md` 用于阶段目标与 KPI 复盘。
+> 更新日期：2026-02-14
+> 说明：后续开发计划、阶段状态、验收结果仅维护在本文件。
 
-## 阶段 0：阻塞修复与一致性（必须先做）
+---
 
-- [x] 修复 `/events` 时间过滤与排序在混合时区输入下的运行时问题（后端）
-- [x] 补齐并统一共享类型：`DailyNewsResponse` / `DailySummaryResponse` / `AnalysisRequest` / `AnalysisResponse`（`packages/shared`）
-- [x] 统一前后端日期/时区使用方式（避免今日新闻跨日误差）
+## 0. 使用规则
 
-## 阶段 1：每日新闻闭环（MVP+，优先级最高）
+1. 本文件是 Single Source of Truth，其他规划文档不再维护勾选状态。
+2. 新需求先写入对应阶段任务（带编号），再开始开发。
+3. 每次提交后必须回写任务状态（`[ ]` -> `[x]`）并补一句结果备注。
 
-- [x] 关注清单与过滤逻辑（用户关注市场/标的/关键词；默认应用到 `/news/today`、`/daily/summary`）
-- [x] `/analysis` 输出模板固化（结论/影响/风险/关注点 + [n] 证据引用），并做结构化校验
-- [x] 分析结果缓存（按问题+来源 hash，带 TTL），`/analysis` 与 `/daily/summary` 复用
-- [x] `/qa` 由规则回答升级为“检索 + Qwen”或“向量检索 + Qwen”链路
+---
 
-验收标准 / 里程碑（含 KPI）：
-- P95 响应时延：无缓存 ≤ 6s；命中缓存 ≤ 1.5s（本地环境）
-- 检索召回：TopK 中至少 1 条有效证据命中率 ≥ 85%（20 条测试问题）
-- 缓存命中率：同问题 24h 内重复请求命中率 ≥ 70%
-测试方法 / 采样口径 / 统计周期：
-- 延时：本地连续请求 30 次计算 P95；工作日/周末各测 1 次
-- 召回：人工构造 20 条问题+对应证据（含 3 个市场、2 个时间窗），TopK=6；月度复测
-- 缓存命中：选 10 条高频问题，24h 内重复请求 3 次；周度复测
+## 1. 当前进度快照
 
-## 阶段 2：前端对接与体验
+- [x] 阶段0：阻塞修复与一致性
+- [x] 阶段1：每日新闻闭环（MVP+）
+- [x] 阶段2：前端对接与体验
+- [x] 阶段3：HKMA 自动化与数据标准化
+- [x] 阶段4：任务编排与向量可插拔
+- [x] 阶段5：能力扩展（真实行情 + 统一模型 + E2E + 可选 pgvector）
+- [ ] 阶段99：静态类型告警收口（并行低优先）
+- [ ] 阶段6：Postgres + pgvector 索引优化与运维脚本
+- [ ] 阶段7：Research 页面真实数据链路
+- [ ] 阶段8：未上市公司情报引擎
+- [ ] 阶段9：科技热度 + 关联分析 + 因果链路
+- [ ] 阶段10：多模型切换 + 定时报告
 
-- 新增“今日新闻”页面（默认当日 + 关注清单过滤）
-- 日报摘要卡（答案 + 证据卡 + [n] 引用联动）
-- 过滤与排序 UX（市场/标的/关键词/时间范围）
-- 导航补入口，完善 `/analysis` 与 `/daily/summary` 的前端接入
+---
 
-验收标准 / 里程碑（含 KPI）：
-- 主要页面首屏渲染 ≤ 2.5s（本地环境）
-- 过滤交互响应 ≤ 300ms（本地环境）
-- 前端错误率（5xx/网络错误）≤ 1%
-测试方法 / 采样口径 / 统计周期：
-- 首屏时间：本地冷启动 10 次取 P95；月度复测
-- 交互响应：事件页切换 10 次过滤条件取均值；双周复测
-- 错误率：按前端日志统计 7 天窗口；周度复盘
+## 2. 下一步执行顺序（从现在开始）
 
-## 阶段 3：LLM 治理与可解释性
+1. 阶段99（并行）：静态类型告警收口
+2. 阶段6：Postgres + pgvector
+3. 阶段7：Research 真实化
+4. 阶段8：未上市公司情报
+5. 阶段9：热度与关联分析
+6. 阶段10：多模型与定时报告
 
-- 统一 LLM 调用封装（超时/重试/日志/耗时/Token 统计），只使用 Qwen（DashScope）
-- LLM 输入规范与脱敏策略（仅传必要字段，避免长文本与敏感信息）
-- 结构化输出合规性校验（模板字段齐全、证据编号存在）
+---
 
-验收标准 / 里程碑（含 KPI）：
-- LLM 调用失败率 ≤ 2%（日级别）
-- 结构化输出合规率 ≥ 90%（抽样评估）
-- 平均 token 消耗较基线下降 ≥ 20%（启用缓存/截断后）
-测试方法 / 采样口径 / 统计周期：
-- 失败率：按“调用次数 × 错误类型”统计；周度复盘
-- 合规率：抽样 50 条回答检查结构字段覆盖；月度复盘
-- token：对比启用缓存/截断前后 50 条问题均值；双周复盘
+## 3. 阶段99：静态类型告警收口
 
-## 阶段 4：数据源与质量（让“今日新闻更准更稳”）
+### 3.1 任务清单
 
-- 确认 HKMA dataset/table 并完善字段映射（`docs/hkma-endpoints.md`）
-- RSS 白名单梳理、增删与来源评级（官方 > 高质量媒体）
-- 来源节流与重试策略统一（User-Agent、频控、退避）
-- 事件去重与主干合并（标题相似度 + 时间窗 + 主干优先级）
-- 数据质量与异常监控（缺失率、重复率、延迟统计）
+- [ ] `P99-S1-A` 收敛 `apps/api/app/services/seed.py` 的 `Literal`/强类型告警
+- [ ] `P99-S1-B` 收敛 `apps/api/app/services/vector_store.py` 的向量参数类型告警
+- [ ] `P99-S1-C` 收敛 `apps/api/app/sources/edgar.py`、`apps/api/app/sources/hkex.py` 事件类型告警
+- [ ] `P99-S1-D` 收敛 `apps/api/app/sources/fred.py`、`apps/api/app/sources/rss.py` 文本解析与字段类型告警
+- [ ] `P99-S1-E` 收敛 `apps/api/tests/test_daily_news.py` 测试构造类型告警
+- [ ] `P99-S1-F` 将类型检查纳入 CI（失败阻断）
 
-验收标准 / 里程碑（含 KPI）：
-- RSS 拉取成功率 ≥ 98%（日级别）
-- 去重后重复率 ≤ 5%（按日事件集合）
-- 数据延迟：源发布后 6 小时内入库比例 ≥ 90%
-测试方法 / 采样口径 / 统计周期：
-- RSS 成功率：按“源 × 天”统计；周度复盘
-- 重复率：同日事件集合按标题+来源去重；周度复盘
-- 数据延迟：抽样 30 条事件比对发布时间与入库时间；月度复盘
+### 3.2 验收
 
-## 阶段 5：能力扩展（可选）
+- [ ] `uv run pyright` 无新增告警
+- [ ] 现存告警均有注释或 issue 追踪
 
-- 接入真实行情与财务数据源（替换免费测试源）
-- 资产级视图与指标口径统一（行情/宏观/财报统一 schema）
-- 可选接入 Postgres + pgvector（非 PC 端或高级用法）
+---
 
-验收标准 / 里程碑（含 KPI）：
-- 行情更新成功率 ≥ 99%（日级别）
-- 关键指标口径一致性测试通过率 = 100%
-测试方法 / 采样口径 / 统计周期：
-- 行情成功率：按“源 × 天”统计；月度复盘
-- 口径一致性：抽样 20 个指标与前端展示比对；季度复盘
+## 4. 阶段6：Postgres + pgvector 索引优化与运维脚本
 
-## 阶段 99：静态类型告警（最低优先级）
+### 4.1 任务清单（P6-S1）
 
-- `apps/api/app/services/http_client.py`：`request_with_retry` 透传参数类型过宽导致 httpx 参数类型告警
-- `apps/api/app/services/ingestion.py`：`asyncio.gather` 返回异常/非列表的静态类型告警
-- `apps/api/app/services/seed.py`：事件构造使用 `Literal` 类型的告警（`EventType` / `Market` / `Sector`）
-- `apps/api/app/services/vector_store.py`：`chromadb` `upsert` 参数类型告警
-- `apps/api/app/sources/edgar.py` / `apps/api/app/sources/hkex.py`：事件字段 `Literal` 类型告警
-- `apps/api/app/sources/fred.py` / `apps/api/app/sources/rss.py`：`markets/sectors` 及文本解析相关类型告警
-- `apps/api/tests/test_daily_news.py`：`Event` 构造参数 `Literal` 类型告警
+- [ ] `P6-S1-A` 新建 `apps/api/app/services/pg_vector_store.py`，实现 upsert/query/healthcheck
+- [ ] `P6-S1-B` 修改 `apps/api/app/config.py`，新增 `ENABLE_PGVECTOR`、`PG_DSN`、`PGVECTOR_TABLE`
+- [ ] `P6-S1-C` 修改 `apps/api/app/services/ingestion.py`，实现 Chroma/PG 双路由写入
+- [ ] `P6-S1-D` 新建 `apps/api/tools/sql/001_pgvector_init.sql`（扩展、建表、索引）
+- [ ] `P6-S1-E` 新建 `apps/api/tools/pg/healthcheck.py` 与 `apps/api/tools/pg/backfill_vectors.py`
+- [ ] `P6-S1-F` 新建 `apps/api/tests/test_pg_vector_store.py`（开关行为与回退测试）
+
+### 4.2 验收
+
+- [ ] 开关关闭时保持现有行为
+- [ ] 开关开启时写入/检索可用
+- [ ] 工具脚本可独立运行并输出状态
+
+---
+
+## 5. 阶段7：Research 页面真实数据链路
+
+### 5.1 任务清单（P7-S1）
+
+- [ ] `P7-S1-A` 新建 `apps/api/app/sources/earnings.py`（财报获取 + 强类型模型）
+- [ ] `P7-S1-B` 修改 `apps/api/app/api.py`，重构 `GET /research/company/{id}` 返回结构
+- [ ] `P7-S1-C` 修改 `apps/api/app/services/analysis.py`，统一检索+分析链路并附引用
+- [ ] `P7-S1-D` 修改 `apps/web/src/app/research/page.tsx`，去除演示态文案并展示来源/时间
+- [ ] `P7-S1-E` 修改 `apps/web/src/lib/api.ts`，补齐 Research 类型定义
+- [ ] `P7-S1-F` 新建 `apps/api/tests/test_research_api.py`（正常/缺失/回退路径）
+
+### 5.2 验收
+
+- [ ] 不再出现硬编码固定回答路径
+- [ ] 页面可见 `source_type` 与 `updated_at`
+- [ ] 回退场景文案准确且可用
+
+---
+
+## 6. 阶段8：未上市公司情报引擎
+
+### 6.1 任务清单（P8-S1）
+
+- [ ] `P8-S1-A` 修改 `apps/api/app/models.py` 新增未上市公司模型
+- [ ] `P8-S1-B` 新建 `apps/api/app/services/unlisted_tracker.py`（画像/事件/时间线）
+- [ ] `P8-S1-C` 修改 `apps/api/app/services/ingestion.py` 接入 `sync_from_events`
+- [ ] `P8-S1-D` 修改 `apps/api/app/api.py` 增加 `/unlisted/companies` 系列端点
+- [ ] `P8-S1-E` 新建 `apps/api/tests/test_unlisted_tracker.py`
+- [ ] `P8-S1-F` 修改 `apps/web/src/app/research/page.tsx` 支持未上市公司展示
+- [ ] `P8-S1-G` API 与前端显式区分 `source_type=seed/live`
+
+### 6.2 验收
+
+- [ ] 至少 14 家未上市公司可查询
+- [ ] 关键事件可追溯来源
+- [ ] Seed/实时数据无混淆
+
+---
+
+## 7. 阶段9：科技热度 + 关联分析 + 因果链路
+
+### 7.1 任务清单（P9-S1）
+
+- [ ] `P9-S1-A` 新建 `apps/api/app/services/tech_heatmap.py`
+- [ ] `P9-S1-B` 新建 `apps/api/app/services/correlation_engine.py`
+- [ ] `P9-S1-C` 新建 `apps/api/app/services/causal_analyzer.py`
+- [ ] `P9-S1-D` 修改 `apps/api/app/config.py`（预设组合与阈值）
+- [ ] `P9-S1-E` 修改 `apps/api/app/api.py` 增加 `/tech/*`、`/correlation/*`
+- [ ] `P9-S1-F` 新建 `apps/web/src/components/CorrelationMatrix.tsx`
+- [ ] `P9-S1-G` 新建 `apps/web/src/app/correlation/page.tsx`
+- [ ] `P9-S1-H` 新建 `apps/api/tests/test_correlation.py`
+
+### 7.2 验收
+
+- [ ] 3 套预设矩阵可返回
+- [ ] 因果链路结构化输出
+- [ ] 前端可切换预设与窗口
+
+---
+
+## 8. 阶段10：多模型切换 + 定时报告
+
+### 8.1 任务清单（P10-S1）
+
+- [ ] `P10-S1-A` 修改 `apps/api/app/config.py` 增加模型注册配置
+- [ ] `P10-S1-B` 修改 `apps/api/app/services/analysis.py` 支持按模型路由
+- [ ] `P10-S1-C` 新建 `apps/api/app/services/scheduled_tasks.py`
+- [ ] `P10-S1-D` 修改 `apps/api/app/api.py` 增加模型查询/切换端点
+- [ ] `P10-S1-E` 新建 `apps/web/src/components/ModelSelector.tsx`
+- [ ] `P10-S1-F` 新建 `apps/web/src/components/ReportBadge.tsx`
+
+### 8.2 验收
+
+- [ ] 至少 2 个模型可切换
+- [ ] 每日报告定时生成稳定
+- [ ] Dashboard 显示最新报告状态
+
+---
+
+## 9. 里程碑与工时（v2.2）
+
+| 阶段 | 预估工时 | 里程碑 |
+|------|---------|------|
+| 阶段99 | 2-4 小时（并行） | 类型告警受控 |
+| 阶段6 | 8-12 小时 | PG 向量链路可开关 |
+| 阶段7 | 10-14 小时 | Research 真实化完成 |
+| 阶段8 | 8-12 小时 | 未上市情报可查询 |
+| 阶段9 | 10-15 小时 | 相关/因果/热度联动 |
+| 阶段10 | 5-8 小时 | 模型切换+定时报告 |
+| 总计 | 43-65 小时 | v2.2 全量目标 |
+
+---
+
+## 10. 文档索引
+
+- 总体方案：`docs/master-plan-v2.md`
+- 详细步骤：`docs/implementation-roadmap-v2.md`
+- 可行性评估：`docs/feasibility-assessment.md`
+
