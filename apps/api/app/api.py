@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import date, datetime, timedelta, timezone
 import logging
 from typing import Awaitable, Callable, Literal, cast
@@ -9,12 +10,14 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from .config import AppConfig
 from .logging import setup_logging
 from .models import (
+    HealthResponse,
     DashboardSummary,
     Event,
     EventEvidence,
@@ -24,6 +27,8 @@ from .models import (
     QAResponse,
     AnalysisRequest,
     AnalysisResponse,
+    TaskInfo,
+    TaskList,
     DailyNewsResponse,
     DailySummaryRequest,
     DailySummaryResponse,
@@ -31,13 +36,20 @@ from .models import (
     TimelineLane,
     EarningsCard,
     Metric,
+    RefreshReport,
     ResearchReport,
     FactCheck,
 )
 from .state import InMemoryStore
 from .services.ingestion import hot_tags, refresh_store
 from .services.analysis import analyze_financial_sources
-from .services.vector_store import EmbeddingsUnavailable, VectorStore, VectorStoreDisabled
+from .services.task_queue import AnalysisTaskQueue
+from .services.vector_store import (
+    BaseVectorStore,
+    EmbeddingsUnavailable,
+    VectorStoreDisabled,
+    create_vector_store,
+)
 from .services.seed import ASSET_CATALOG, build_asset_series
 
 ASSET_MARKET_MAP = {item["id"]: item["market"] for item in ASSET_CATALOG}
@@ -75,30 +87,55 @@ def create_app() -> FastAPI:
     store = InMemoryStore()
     scheduler = AsyncIOScheduler(timezone=ZoneInfo(config.timezone))
 
-    vector_store: VectorStore | None = None
+    vector_store: BaseVectorStore | None = None
+    vector_store_ready = False
     try:
-        vector_store = VectorStore(config)
-        logger.info("vector_store_enabled path=%s collection=%s", config.chroma_path, config.chroma_collection_sources)
+        vector_store = create_vector_store(config)
+        logger.info(
+            "vector_store_enabled backend=%s path=%s collection=%s",
+            config.vector_backend,
+            config.chroma_path,
+            config.chroma_collection_sources,
+        )
     except VectorStoreDisabled:
         logger.info("vector_store_disabled")
     except Exception as exc:
         logger.warning("vector_store_init_failed error=%s", exc)
         vector_store = None
 
-    async def refresh_and_index() -> None:
-        await refresh_store(store, config)
+    task_queue = AnalysisTaskQueue(
+        worker=lambda payload: analyze_financial_sources(payload, config, vector_store),
+    )
+
+    async def refresh_and_index() -> RefreshReport:
+        nonlocal vector_store_ready
+        report = await refresh_store(store, config)
+        store.set_refresh_report(report)
         if not vector_store:
-            return
+            vector_store_ready = False
+            return report
         try:
             vector_store.upsert_events(store.events)
+            vector_store_ready = True
         except EmbeddingsUnavailable as exc:
             logger.warning("vector_store_embeddings_unavailable error=%s", exc)
+            vector_store_ready = False
+            store.set_refresh_error(f"vector_store_embeddings_unavailable: {exc}")
         except Exception as exc:
             logger.warning("vector_store_index_failed error=%s", exc)
+            vector_store_ready = False
+            store.set_refresh_error(f"vector_store_index_failed: {exc}")
+        return report
 
-    @app.get("/health")
-    async def health() -> dict[str, bool]:
-        return {"ok": True}
+    @app.get("/health", response_model=HealthResponse)
+    async def health() -> HealthResponse:
+        return HealthResponse(
+            ok=True,
+            store_events=len(store.events),
+            updated_at=store.updated_at,
+            vector_store_enabled=config.enable_vector_store,
+            vector_store_ready=vector_store_ready if config.enable_vector_store else False,
+        )
 
     @app.get("/dashboard/summary", response_model=DashboardSummary)
     async def dashboard_summary(date_str: str | None = Query(default=None, alias="date")) -> DashboardSummary:
@@ -283,6 +320,50 @@ def create_app() -> FastAPI:
         except Exception as exc:
             raise HTTPException(status_code=500, detail="Analysis failed") from exc
 
+    @app.post("/analysis/tasks", response_model=TaskInfo)
+    async def submit_analysis_task(payload: AnalysisRequest) -> TaskInfo:
+        return await task_queue.submit(payload)
+
+    @app.get("/analysis/tasks", response_model=TaskList)
+    async def list_analysis_tasks(limit: int = 20) -> TaskList:
+        return await task_queue.list(limit=limit)
+
+    @app.get("/analysis/tasks/stream")
+    async def stream_analysis_tasks(
+        request: Request,
+        limit: int = 20,
+        interval_ms: int = 1200,
+    ) -> StreamingResponse:
+        safe_interval = max(interval_ms, 200) / 1000
+
+        async def event_generator():
+            last_payload = ""
+            while True:
+                if await request.is_disconnected():
+                    break
+                payload = await task_queue.list(limit=limit)
+                serialized = payload.model_dump_json(exclude_none=True)
+                if serialized != last_payload:
+                    yield f"event: tasks\\ndata: {serialized}\\n\\n"
+                    last_payload = serialized
+                await asyncio.sleep(safe_interval)
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
+
+    @app.get("/analysis/tasks/{task_id}", response_model=TaskInfo)
+    async def get_analysis_task(task_id: str) -> TaskInfo:
+        task = await task_queue.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+        return task
+
     @app.get("/news/today", response_model=DailyNewsResponse)
     async def news_today(
         market: str | None = None,
@@ -371,13 +452,16 @@ def create_app() -> FastAPI:
     @app.post("/admin/refresh")
     async def admin_refresh() -> dict[str, object]:
         try:
-            await refresh_and_index()
+            report = await refresh_and_index()
         except Exception as exc:
+            store.set_refresh_error(str(exc))
             raise HTTPException(status_code=500, detail="Refresh failed") from exc
         return {
             "ok": True,
             "updated_at": store.updated_at,
             "total_events": len(store.events),
+            "report": report,
+            "last_error": store.last_refresh_error,
         }
 
     return app
@@ -386,7 +470,7 @@ def create_app() -> FastAPI:
 def _schedule_jobs(
     scheduler: AsyncIOScheduler,
     config: AppConfig,
-    refresh_job: Callable[[], Awaitable[None]],
+    refresh_job: Callable[[], Awaitable[RefreshReport]],
 ) -> None:
     morning_hour, morning_minute = _parse_clock(config.schedule_morning)
     evening_hour, evening_minute = _parse_clock(config.schedule_evening)

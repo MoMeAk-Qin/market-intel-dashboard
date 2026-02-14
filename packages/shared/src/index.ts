@@ -1,4 +1,6 @@
 export type {
+  AnalysisTaskInfo,
+  AnalysisTaskList,
   AnalysisRequest,
   AnalysisResponse,
   AnalysisUsage,
@@ -13,8 +15,10 @@ export type {
   EventNumber,
   EventSourceType,
   EventType,
+  TaskStatus,
   Market,
   PaginatedEvents,
   QAResponse,
   Sector,
+  HealthResponse,
 } from './types';

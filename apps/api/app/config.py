@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+from typing import Literal
 
 
 def _get_bool(value: str | None, default: bool) -> bool:
@@ -82,6 +83,7 @@ class AppConfig:
     qwen_temperature: float
     qwen_max_tokens: int
     enable_vector_store: bool
+    vector_backend: Literal["chroma", "simple"]
     chroma_path: str
     chroma_collection_sources: str
     dashscope_embeddings_model: str
@@ -168,9 +170,19 @@ class AppConfig:
             qwen_temperature=float(os.getenv("QWEN_TEMPERATURE", "0.2")),
             qwen_max_tokens=int(os.getenv("QWEN_MAX_TOKENS", "512")),
             enable_vector_store=_get_bool(os.getenv("ENABLE_VECTOR_STORE"), True),
+            vector_backend=_get_vector_backend(os.getenv("VECTOR_BACKEND", "chroma")),
             chroma_path=os.getenv("CHROMA_PATH", "apps/api/data/chroma"),
             chroma_collection_sources=os.getenv("CHROMA_COLLECTION_SOURCES", "sources"),
             dashscope_embeddings_model=os.getenv("DASHSCOPE_EMBEDDINGS_MODEL", "text-embedding-v4"),
             analysis_top_k=int(os.getenv("ANALYSIS_TOP_K", "6")),
             analysis_cache_ttl_seconds=int(os.getenv("ANALYSIS_CACHE_TTL_SECONDS", "86400")),
         )
+
+
+def _get_vector_backend(value: str | None) -> Literal["chroma", "simple"]:
+    normalized = (value or "chroma").strip().lower()
+    if normalized == "chroma":
+        return "chroma"
+    if normalized == "simple":
+        return "simple"
+    return "chroma"

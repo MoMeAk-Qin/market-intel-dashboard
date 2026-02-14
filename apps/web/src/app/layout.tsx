@@ -3,13 +3,13 @@ import { Providers } from './providers';
 import { SiteHeader } from '@/components/site-header';
 
 export const metadata = {
-  title: 'Cipher Wallet',
-  description: 'Secure multi-chain crypto wallet with protected transaction preview.',
+  title: 'Market Intel Dashboard',
+  description: '跨市场事件、今日新闻、问答分析与日报摘要工作台。',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="zh-CN">
       <body className="min-h-screen text-slate-100 antialiased">
         <Providers>
           <SiteHeader />

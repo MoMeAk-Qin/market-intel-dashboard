@@ -108,7 +108,7 @@ function EventsPageContent() {
         accessorKey: 'data_origin',
         header: 'Origin',
         cell: ({ row }) => (
-          <Badge variant={row.original.data_origin === 'live' ? 'default' : 'secondary'}>
+          <Badge variant={row.original.data_origin === 'live' ? 'success' : 'warning'}>
             {row.original.data_origin === 'live' ? 'Live' : 'Seed'}
           </Badge>
         ),

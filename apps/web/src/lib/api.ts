@@ -1,3 +1,13 @@
+import type {
+  AnalysisRequest,
+  AnalysisTaskInfo,
+  AnalysisTaskList,
+  DailyNewsResponse,
+  DailySummaryRequest,
+  DailySummaryResponse,
+  HealthResponse,
+} from '@market/shared';
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
 
 type QueryValue = string | number | boolean | undefined | null;
@@ -29,7 +39,10 @@ export const apiGet = async <T>(path: string, params?: QueryParams): Promise<T> 
   return handleResponse<T>(response);
 };
 
-export const apiPost = async <T>(path: string, body: Record<string, unknown>): Promise<T> => {
+export const apiPost = async <T, B extends Record<string, unknown> = Record<string, unknown>>(
+  path: string,
+  body: B,
+): Promise<T> => {
   const url = `${API_BASE_URL}${path}`;
   const response = await fetch(url, {
     method: 'POST',
@@ -38,3 +51,28 @@ export const apiPost = async <T>(path: string, body: Record<string, unknown>): P
   });
   return handleResponse<T>(response);
 };
+
+export type NewsTodayParams = {
+  market?: string;
+  tickers?: string;
+  q?: string;
+  limit?: number;
+  sort?: 'time' | 'impact';
+};
+
+export const getHealth = () => apiGet<HealthResponse>('/health');
+
+export const getNewsToday = (params: NewsTodayParams = {}) =>
+  apiGet<DailyNewsResponse>('/news/today', params);
+
+export const getDailySummary = (payload: DailySummaryRequest) =>
+  apiPost<DailySummaryResponse, DailySummaryRequest>('/daily/summary', payload);
+
+export const submitAnalysisTask = (payload: AnalysisRequest) =>
+  apiPost<AnalysisTaskInfo, AnalysisRequest>('/analysis/tasks', payload);
+
+export const getAnalysisTask = (taskId: string) =>
+  apiGet<AnalysisTaskInfo>(`/analysis/tasks/${taskId}`);
+
+export const listAnalysisTasks = (limit = 20) =>
+  apiGet<AnalysisTaskList>('/analysis/tasks', { limit });

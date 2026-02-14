@@ -45,7 +45,12 @@ export default function AssetDetailPage() {
   return (
     <div className="space-y-6">
       <div className="fade-up space-y-2">
-        <Badge variant="secondary">Asset Detail</Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary">Asset Detail</Badge>
+          <Badge variant="warning">
+            演示行情（非实时）
+          </Badge>
+        </div>
         <h1 className="text-3xl font-semibold">{assetId}</h1>
         <p className="text-sm text-slate-600">Track price action and recent catalysts in one view.</p>
       </div>

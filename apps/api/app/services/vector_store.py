@@ -4,11 +4,8 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
-
-import chromadb
-import dashscope
 from http import HTTPStatus
+from typing import Any, Protocol
 
 from ..config import AppConfig
 from ..models import Event, EventEvidence
@@ -30,20 +27,41 @@ class RetrievedEvidence:
     score: float
 
 
+class BaseVectorStore(Protocol):
+    def is_ready(self) -> bool: ...
+
+    def upsert_events(self, events: list[Event]) -> int: ...
+
+    def query(self, query_text: str, *, top_k: int) -> list[RetrievedEvidence]: ...
+
+
 def _coerce_iso_datetime(value: str) -> datetime:
-    # Chroma metadata stores only JSON-ish primitives; we persist datetime as ISO strings.
     try:
         return datetime.fromisoformat(value)
     except ValueError:
-        # Best-effort fallback; keep server running even if one record is malformed.
         return datetime.utcnow()
 
 
-class VectorStore:
+class ChromaVectorStore:
     def __init__(self, config: AppConfig) -> None:
         self._config = config
         if not config.enable_vector_store:
             raise VectorStoreDisabled("Vector store disabled by config")
+
+        try:
+            import chromadb
+        except ImportError as exc:
+            raise RuntimeError("chromadb is required for chroma backend") from exc
+
+        self._dashscope = None
+        if config.dashscope_api_key:
+            try:
+                import dashscope
+
+                dashscope.api_key = config.dashscope_api_key
+                self._dashscope = dashscope
+            except ImportError as exc:
+                raise RuntimeError("dashscope is required for chroma backend") from exc
 
         os.makedirs(config.chroma_path, exist_ok=True)
         self._client = chromadb.PersistentClient(path=config.chroma_path)
@@ -52,17 +70,16 @@ class VectorStore:
             metadata={"hnsw:space": "cosine"},
         )
 
-        if config.dashscope_api_key:
-            dashscope.api_key = config.dashscope_api_key
-
     def is_ready(self) -> bool:
         return bool(self._config.dashscope_api_key)
 
     def _embed_texts(self, texts: list[str]) -> list[list[float]]:
         if not self._config.dashscope_api_key:
             raise EmbeddingsUnavailable("DASHSCOPE_API_KEY not configured (embeddings disabled)")
-        # DashScope embeddings API accepts either a single string or a list of strings.
-        resp = dashscope.TextEmbedding.call(
+        if self._dashscope is None:
+            raise EmbeddingsUnavailable("dashscope client unavailable")
+
+        resp = self._dashscope.TextEmbedding.call(
             model=self._config.dashscope_embeddings_model,
             input=texts,
         )
@@ -87,7 +104,6 @@ class VectorStore:
         if not isinstance(embeddings, list):
             raise EmbeddingsUnavailable("DashScope embeddings response missing output.embeddings")
 
-        # Each item usually contains {"embedding": [...], "text_index": i}.
         items: list[tuple[int, list[float]]] = []
         for idx, item in enumerate(embeddings):
             if not isinstance(item, dict):
@@ -102,10 +118,9 @@ class VectorStore:
                 order = idx
             items.append((order, [float(x) for x in emb]))
 
-        items.sort(key=lambda t: t[0])
+        items.sort(key=lambda pair: pair[0])
         vectors = [vec for _, vec in items]
         if len(vectors) != len(texts):
-            # Best-effort: still return what we have, but warn about mismatch.
             logger.warning("dashscope_embeddings_mismatch expected=%s got=%s", len(texts), len(vectors))
         return vectors
 
@@ -115,29 +130,29 @@ class VectorStore:
         metadatas: list[dict[str, Any]] = []
 
         for event in events:
-            for ev in event.evidence:
-                excerpt = (ev.excerpt or event.summary or "").strip()
+            for evidence in event.evidence:
+                excerpt = (evidence.excerpt or event.summary or "").strip()
                 if not excerpt:
                     continue
                 excerpt = excerpt[:1200]
-                doc = "\n".join(
+                document = "\n".join(
                     [
                         f"headline: {event.headline}",
                         f"summary: {event.summary}",
-                        f"source_title: {ev.title}",
+                        f"source_title: {evidence.title}",
                         f"excerpt: {excerpt}",
                     ]
                 )
-                ids.append(f"evidence:{ev.quote_id}")
-                documents.append(doc)
+                ids.append(f"evidence:{evidence.quote_id}")
+                documents.append(document)
                 metadatas.append(
                     {
-                        "quote_id": ev.quote_id,
+                        "quote_id": evidence.quote_id,
                         "event_id": event.event_id,
                         "publisher": event.publisher,
-                        "title": ev.title,
-                        "source_url": ev.source_url,
-                        "published_at": ev.published_at.isoformat(),
+                        "title": evidence.title,
+                        "source_url": evidence.source_url,
+                        "published_at": evidence.published_at.isoformat(),
                         "markets": ",".join(event.markets),
                         "tickers": ",".join(event.tickers),
                         "event_type": event.event_type,
@@ -178,27 +193,41 @@ class VectorStore:
         distances = (result.get("distances") or [[]])[0]
 
         retrieved: list[RetrievedEvidence] = []
-        for doc_id, meta, doc, dist in zip(ids, metadatas, documents, distances):
-            if not isinstance(meta, dict):
+        for doc_id, metadata, document, distance in zip(ids, metadatas, documents, distances):
+            if not isinstance(metadata, dict):
                 continue
             excerpt = ""
-            if isinstance(doc, str):
-                # Recover the last line "excerpt: ..." as the most useful snippet.
-                for line in reversed(doc.splitlines()):
+            if isinstance(document, str):
+                for line in reversed(document.splitlines()):
                     if line.startswith("excerpt:"):
                         excerpt = line.removeprefix("excerpt:").strip()
                         break
 
             evidence = EventEvidence(
-                quote_id=str(meta.get("quote_id") or doc_id),
-                source_url=str(meta.get("source_url") or ""),
-                title=str(meta.get("title") or ""),
-                published_at=_coerce_iso_datetime(str(meta.get("published_at") or "")),
+                quote_id=str(metadata.get("quote_id") or doc_id),
+                source_url=str(metadata.get("source_url") or ""),
+                title=str(metadata.get("title") or ""),
+                published_at=_coerce_iso_datetime(str(metadata.get("published_at") or "")),
                 excerpt=excerpt,
             )
-
-            # cosine distance -> similarity score (best-effort)
-            score = 1.0 - float(dist) if dist is not None else 0.0
+            score = 1.0 - float(distance) if distance is not None else 0.0
             retrieved.append(RetrievedEvidence(evidence=evidence, score=score))
 
         return retrieved
+
+
+VectorStore = ChromaVectorStore
+
+
+def create_vector_store(config: AppConfig) -> BaseVectorStore:
+    if not config.enable_vector_store:
+        raise VectorStoreDisabled("Vector store disabled by config")
+
+    backend = config.vector_backend.strip().lower()
+    if backend == "chroma":
+        return ChromaVectorStore(config)
+    if backend == "simple":
+        from .simple_vector_store import SimpleVectorStore
+
+        return SimpleVectorStore(config)
+    raise ValueError(f"Unsupported vector backend: {backend}")

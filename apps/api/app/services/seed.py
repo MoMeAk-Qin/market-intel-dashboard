@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 import random
@@ -106,15 +107,16 @@ ASSET_CATALOG = [
     {"id": "0700.HK", "name": "Tencent Holdings", "base": 328.4, "market": "HK"},
 ]
 
-
-T = TypeVar("T")
-
-
-def _pick(rng: random.Random, items: list[T]) -> T:
-    return items[int(rng.random() * len(items))]
+T = TypeVar("T", bound=object)
 
 
-def _pick_many(rng: random.Random, items: list[T], minimum: int, maximum: int) -> list[T]:
+def _pick(rng: random.Random, items: Sequence[T]) -> T:
+    if not items:
+        raise ValueError("items must not be empty")
+    return items[rng.randrange(len(items))]
+
+
+def _pick_many(rng: random.Random, items: Sequence[T], minimum: int, maximum: int) -> list[T]:
     count = max(minimum, int(rng.random() * (maximum - minimum + 1)) + minimum)
     selected = [_pick(rng, items) for _ in range(count)]
     unique: list[T] = []

@@ -92,6 +92,23 @@ export type AnalysisResponse = {
   sources: EventEvidence[];
 };
 
+export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export type AnalysisTaskInfo = {
+  task_id: string;
+  status: TaskStatus;
+  created_at: string;
+  updated_at: string;
+  payload: AnalysisRequest;
+  result?: AnalysisResponse | null;
+  error?: string | null;
+};
+
+export type AnalysisTaskList = {
+  items: AnalysisTaskInfo[];
+  total: number;
+};
+
 export type DailyNewsResponse = {
   date: string;
   items: Event[];
@@ -115,6 +132,14 @@ export type DailySummaryResponse = {
   total_news: number;
   usage?: AnalysisUsage | null;
   sources: EventEvidence[];
+};
+
+export type HealthResponse = {
+  ok: boolean;
+  store_events: number;
+  updated_at: string | null;
+  vector_store_enabled: boolean;
+  vector_store_ready: boolean;
 };
 
 export type PaginatedEvents = {

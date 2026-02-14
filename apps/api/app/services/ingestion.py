@@ -7,7 +7,7 @@ import time
 from typing import Iterable
 
 from ..config import AppConfig
-from ..models import Event
+from ..models import Event, RefreshReport
 from ..state import InMemoryStore
 from ..sources.edgar import fetch_edgar_events
 from ..sources.fred import fetch_fred_events
@@ -21,10 +21,12 @@ from .seed import HOT_TAGS, build_seed_events
 logger = logging.getLogger("ingestion")
 
 
-async def refresh_store(store: InMemoryStore, config: AppConfig) -> None:
+async def refresh_store(store: InMemoryStore, config: AppConfig) -> RefreshReport:
     started = time.perf_counter()
+    started_at = datetime.now(UTC)
     seeded = build_seed_events() if config.enable_seed_data else []
     live_events: list[Event] = []
+    source_errors: list[str] = []
 
     if config.enable_live_sources:
         tasks = []
@@ -61,6 +63,7 @@ async def refresh_store(store: InMemoryStore, config: AppConfig) -> None:
             for name, result in zip(source_names, results):
                 if isinstance(result, BaseException):
                     logger.warning("source_failed source=%s error=%s", name, result)
+                    source_errors.append(f"{name}: {result}")
                     continue
                 if not isinstance(result, list):
                     logger.warning(
@@ -68,6 +71,7 @@ async def refresh_store(store: InMemoryStore, config: AppConfig) -> None:
                         name,
                         type(result).__name__,
                     )
+                    source_errors.append(f"{name}: invalid_result:{type(result).__name__}")
                     continue
                 logger.info("source_loaded source=%s count=%s", name, len(result))
                 live_events.extend(result)
@@ -88,6 +92,16 @@ async def refresh_store(store: InMemoryStore, config: AppConfig) -> None:
         len(live_events),
         len(seeded_events),
         duration,
+    )
+    finished_at = datetime.now(UTC)
+    return RefreshReport(
+        started_at=started_at,
+        finished_at=finished_at,
+        duration_ms=int(round(duration * 1000)),
+        total_events=len(events),
+        live_events=len(live_events),
+        seed_events=len(seeded_events),
+        source_errors=source_errors,
     )
 
 

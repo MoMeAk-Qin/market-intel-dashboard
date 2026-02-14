@@ -38,8 +38,13 @@ _UNIT_NORMALIZATION = {
     "basis point": "bp",
     "bp": "bp",
     "%": "pct",
+    "% per annum": "pct_pa",
     "percent": "pct",
     "percentage": "pct",
+    "rmb million": "CNY_mn",
+    "usd/hkd for value spot": "USDHKD_spot",
+    "quantity": "count",
+    "hk$": "HKD",
 }
 
 
@@ -54,13 +59,37 @@ class _HKMAEndpointRuntime:
 
 
 async def fetch_hkma_events(config: AppConfig) -> list[Event]:
+    grouped_points = await _fetch_metric_points_grouped_by_endpoint(config)
+    events: list[Event] = []
+    for endpoint, metric_points in grouped_points:
+        event = _build_event_from_metrics(
+            endpoint=endpoint,
+            metric_points=metric_points,
+            max_fields=config.hkma_max_fields,
+        )
+        if event is not None:
+            events.append(event)
+    return events
+
+
+async def fetch_hkma_metric_points(config: AppConfig) -> list[MetricPoint]:
+    grouped_points = await _fetch_metric_points_grouped_by_endpoint(config)
+    metric_points: list[MetricPoint] = []
+    for _, points in grouped_points:
+        metric_points.extend(points)
+    return metric_points
+
+
+async def _fetch_metric_points_grouped_by_endpoint(
+    config: AppConfig,
+) -> list[tuple[_HKMAEndpointRuntime, list[MetricPoint]]]:
     endpoints = _load_endpoints(config)
     if not endpoints:
         return []
 
     headers = {"User-Agent": config.user_agent}
     timeout = httpx.Timeout(config.http_timeout, read=config.http_timeout)
-    events: list[Event] = []
+    grouped: list[tuple[_HKMAEndpointRuntime, list[MetricPoint]]] = []
     async with httpx.AsyncClient(headers=headers, timeout=timeout) as client:
         for endpoint in endpoints:
             records = await _fetch_records(
@@ -71,14 +100,9 @@ async def fetch_hkma_events(config: AppConfig) -> list[Event]:
             if not records:
                 continue
             metric_points = _records_to_metric_points(endpoint, records)
-            event = _build_event_from_metrics(
-                endpoint=endpoint,
-                metric_points=metric_points,
-                max_fields=config.hkma_max_fields,
-            )
-            if event is not None:
-                events.append(event)
-    return events
+            if metric_points:
+                grouped.append((endpoint, metric_points))
+    return grouped
 
 
 def _load_endpoints(config: AppConfig) -> list[_HKMAEndpointRuntime]:
@@ -108,6 +132,9 @@ def _load_endpoints_from_catalog(catalog: HKMACatalog) -> list[_HKMAEndpointRunt
                 units[field.name] = field.unit_of_measure
             if field.description:
                 descriptions[field.name] = field.description
+        for record_field in item.openapi_summary.record_fields:
+            if record_field.description and record_field.name not in descriptions:
+                descriptions[record_field.name] = record_field.description
         endpoints.append(
             _HKMAEndpointRuntime(
                 frequency=item.frequency,
@@ -293,7 +320,7 @@ def _build_event_from_metrics(
         EventNumber(
             name=point.field_name,
             value=point.value,
-            unit=point.unit_raw or "",
+            unit=point.unit_raw,
             period=point.frequency,
             source_quote_id=point.series_id,
         )
@@ -369,12 +396,12 @@ def _parse_date(raw: object, frequency: Literal["daily", "monthly"]) -> date | N
     value = raw.strip()
     if not value:
         return None
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y"):
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d", "%Y%m%d", "%d/%m/%Y", "%m/%d/%Y"):
         try:
             return datetime.strptime(value, fmt).date()
         except ValueError:
             continue
-    for fmt in ("%Y-%m", "%Y/%m"):
+    for fmt in ("%Y-%m", "%Y/%m", "%Y%m"):
         try:
             parsed = datetime.strptime(value, fmt)
         except ValueError:
@@ -401,6 +428,10 @@ def _coerce_float(value: object) -> float | None:
     normalized = value.strip().replace(",", "")
     if not normalized or normalized in {"-", "--", "N/A", "n/a"}:
         return None
+    if normalized.startswith("(") and normalized.endswith(")"):
+        normalized = f"-{normalized[1:-1]}"
+    if normalized.startswith("+"):
+        normalized = normalized[1:]
     if normalized.endswith("%"):
         normalized = normalized[:-1]
     try:

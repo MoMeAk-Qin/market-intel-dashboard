@@ -107,6 +107,24 @@ class AnalysisResponse(BaseModel):
     sources: list[EventEvidence] = Field(default_factory=list)
 
 
+TaskStatus = Literal["pending", "running", "completed", "failed"]
+
+
+class TaskInfo(BaseModel):
+    task_id: str
+    status: TaskStatus
+    created_at: datetime
+    updated_at: datetime
+    payload: AnalysisRequest
+    result: AnalysisResponse | None = None
+    error: str | None = None
+
+
+class TaskList(BaseModel):
+    items: list[TaskInfo] = Field(default_factory=list)
+    total: int
+
+
 class DailyNewsResponse(BaseModel):
     date: date
     items: list[Event]
@@ -130,6 +148,24 @@ class DailySummaryResponse(BaseModel):
     total_news: int
     usage: AnalysisUsage | None = None
     sources: list[EventEvidence] = Field(default_factory=list)
+
+
+class RefreshReport(BaseModel):
+    started_at: datetime
+    finished_at: datetime
+    duration_ms: int
+    total_events: int
+    live_events: int
+    seed_events: int
+    source_errors: list[str] = Field(default_factory=list)
+
+
+class HealthResponse(BaseModel):
+    ok: bool
+    store_events: int
+    updated_at: datetime | None = None
+    vector_store_enabled: bool
+    vector_store_ready: bool
 
 
 class KPI(BaseModel):

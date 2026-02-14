@@ -25,6 +25,8 @@ from .hkma_catalog import (
     HKMARecordField,
     build_hkma_endpoints_value,
     build_hkma_units_map,
+    normalize_hkma_catalog,
+    validate_hkma_catalog,
 )
 
 logger = logging.getLogger("source.hkma.discovery")
@@ -268,23 +270,30 @@ def write_hkma_discovery_outputs(
     endpoints_env_path: str | Path | None = None,
     units_json_path: str | Path | None = None,
 ) -> None:
+    normalized_catalog = normalize_hkma_catalog(catalog)
+    issues = validate_hkma_catalog(normalized_catalog)
+    if issues:
+        logger.warning("hkma_catalog_validation_issues count=%s", len(issues))
+        for issue in issues:
+            logger.warning("hkma_catalog_issue detail=%s", issue)
+
     catalog_file = Path(catalog_path)
     catalog_file.parent.mkdir(parents=True, exist_ok=True)
     catalog_file.write_text(
-        catalog.model_dump_json(indent=2, exclude_none=True),
+        normalized_catalog.model_dump_json(indent=2, exclude_none=True),
         encoding="utf-8",
     )
 
     if endpoints_env_path is not None:
         endpoints_file = Path(endpoints_env_path)
         endpoints_file.parent.mkdir(parents=True, exist_ok=True)
-        endpoints_value = build_hkma_endpoints_value(catalog)
+        endpoints_value = build_hkma_endpoints_value(normalized_catalog)
         endpoints_file.write_text(f"HKMA_ENDPOINTS={endpoints_value}\n", encoding="utf-8")
 
     if units_json_path is not None:
         units_file = Path(units_json_path)
         units_file.parent.mkdir(parents=True, exist_ok=True)
-        units_map = build_hkma_units_map(catalog)
+        units_map = build_hkma_units_map(normalized_catalog)
         units_file.write_text(
             json.dumps(units_map, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",

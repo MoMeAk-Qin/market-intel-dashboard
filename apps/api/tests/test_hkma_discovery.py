@@ -1,11 +1,24 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import json
+
+from app.sources.hkma_catalog import (
+    HKMACatalog,
+    HKMAEndpointCatalog,
+    HKMAFieldMeta,
+    HKMAOpenAPIEndpoint,
+    HKMAOpenAPISummary,
+    HKMAQueryParam,
+    HKMARecordField,
+)
 from app.sources.hkma_discovery import (
     _DocsHTMLParser,
     _extract_api_url,
     _extract_output_fields,
     _infer_frequency,
     _summarize_openapi,
+    write_hkma_discovery_outputs,
 )
 
 
@@ -126,3 +139,55 @@ def test_infer_frequency_prioritizes_url_path() -> None:
         inherited="monthly",
     )
     assert frequency == "daily"
+
+
+def test_write_outputs_normalizes_and_dedupes_catalog(tmp_path) -> None:
+    api_url = "https://api.hkma.gov.hk/public/market-data-and-statistics/daily-monetary-statistics/example"
+    endpoint = HKMAEndpointCatalog(
+        frequency="daily",
+        doc_url="https://apidocs.hkma.gov.hk/documentation/market-data-and-statistics/daily-monetary-statistics/example/",
+        api_url=api_url,
+        openapi_summary=HKMAOpenAPISummary(
+            base_url="https://api.hkma.gov.hk/public",
+            endpoints=[
+                HKMAOpenAPIEndpoint(method="get", url=api_url),
+                HKMAOpenAPIEndpoint(method="GET", url=api_url),
+            ],
+            query_params=[HKMAQueryParam(name="to"), HKMAQueryParam(name="from")],
+            record_fields=[
+                HKMARecordField(name="metric_b", type="number"),
+                HKMARecordField(name="metric_a", type="number"),
+            ],
+        ),
+        fields_meta=[
+            HKMAFieldMeta(name="metric_b", unit_of_measure="bp"),
+            HKMAFieldMeta(name="metric_a", unit_of_measure="%"),
+        ],
+    )
+    catalog = HKMACatalog(
+        generated_at=datetime.now(timezone.utc),
+        source_root="https://apidocs.hkma.gov.hk/documentation/market-data-and-statistics/",
+        endpoints=[endpoint, endpoint],
+    )
+
+    catalog_path = tmp_path / "hkma_catalog.json"
+    endpoints_path = tmp_path / "hkma_endpoints.env"
+    units_path = tmp_path / "hkma_units.json"
+    write_hkma_discovery_outputs(
+        catalog=catalog,
+        catalog_path=catalog_path,
+        endpoints_env_path=endpoints_path,
+        units_json_path=units_path,
+    )
+
+    catalog_payload = json.loads(catalog_path.read_text(encoding="utf-8"))
+    assert len(catalog_payload["endpoints"]) == 1
+    endpoint_payload = catalog_payload["endpoints"][0]
+    assert [item["name"] for item in endpoint_payload["openapi_summary"]["query_params"]] == ["from", "to"]
+    assert [item["name"] for item in endpoint_payload["fields_meta"]] == ["metric_a", "metric_b"]
+
+    endpoints_env = endpoints_path.read_text(encoding="utf-8")
+    assert endpoints_env.strip() == f"HKMA_ENDPOINTS={api_url}"
+
+    units_payload = json.loads(units_path.read_text(encoding="utf-8"))
+    assert list(units_payload[api_url].keys()) == ["metric_a", "metric_b"]

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -37,6 +38,9 @@ export default function ResearchPage() {
         <p className="text-sm text-slate-600">
           Track company fundamentals, analyst views, and fact checks in one consolidated view.
         </p>
+        <Badge variant="warning">
+          演示数据（非实时）
+        </Badge>
       </div>
 
       <Card className="fade-up">

@@ -11,7 +11,7 @@ from openai import OpenAI
 
 from ..config import AppConfig
 from ..models import AnalysisRequest, AnalysisResponse, AnalysisUsage, EventEvidence
-from .vector_store import EmbeddingsUnavailable, VectorStore, VectorStoreDisabled
+from .vector_store import BaseVectorStore, EmbeddingsUnavailable, VectorStoreDisabled
 
 _REQUIRED_SECTIONS: tuple[str, ...] = ("【结论】", "【影响】", "【风险】", "【关注点】")
 _REF_PATTERN = re.compile(r"\[(\d+)\]")
@@ -30,7 +30,7 @@ _ANALYSIS_CACHE_LOCK = Lock()
 def analyze_financial_sources(
     payload: AnalysisRequest,
     config: AppConfig,
-    vector_store: VectorStore | None = None,
+    vector_store: BaseVectorStore | None = None,
 ) -> AnalysisResponse:
     if not payload.question.strip():
         raise ValueError("question is required")
