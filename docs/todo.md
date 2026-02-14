@@ -2,6 +2,7 @@
 
 > 更新日期：2026-02-14
 > 说明：后续开发计划、阶段状态、验收结果仅维护在本文件。
+> 重要：执行任何任务时，必须同步参看 `docs/master-plan-v2.md`、`docs/implementation-roadmap-v2.md`、`docs/feasibility-assessment.md`。
 
 ---
 
@@ -10,6 +11,36 @@
 1. 本文件是 Single Source of Truth，其他规划文档不再维护勾选状态。
 2. 新需求先写入对应阶段任务（带编号），再开始开发。
 3. 每次提交后必须回写任务状态（`[ ]` -> `[x]`）并补一句结果备注。
+4. 开发执行时，`todo.md` 只负责“做什么和先后顺序”，详细实现必须回到三份配套文档核对。
+
+---
+
+## 0.1 AI Agent 同步参看规则（必须）
+
+1. 开工前必须同时阅读以下文档的对应章节：
+- `docs/todo.md`：任务编号、执行顺序、完成状态。
+- `docs/master-plan-v2.md`：目标边界、术语口径、阶段验收框架。
+- `docs/implementation-roadmap-v2.md`：文件级改动点、接口与实现步骤。
+- `docs/feasibility-assessment.md`：风险、前提条件、资源与回退约束。
+2. 文档冲突时按以下优先级执行：
+- 任务顺序与完成状态：以 `docs/todo.md` 为准。
+- 具体文件路径与实施步骤：以 `docs/implementation-roadmap-v2.md` 为准。
+- 业务边界与验收口径：以 `docs/master-plan-v2.md` 为准。
+- 风险分级与实施前提：以 `docs/feasibility-assessment.md` 为准。
+3. 若仍存在冲突或信息缺失，先在本文件新增“待澄清”任务，再进入代码实现。
+
+---
+
+## 0.2 AI Agent 单任务执行模板（建议严格遵循）
+
+1. 选择当前阶段第一个未完成任务（如 `P6-S1-A`）。
+2. 从 `master-plan-v2.md` 提取该任务的目标与验收边界。
+3. 从 `implementation-roadmap-v2.md` 提取对应文件改动与实现步骤。
+4. 从 `feasibility-assessment.md` 检查前提条件与主要风险。
+5. 按步骤实现代码并补齐最小必要测试。
+6. 执行验证命令并记录结果（通过/失败与原因）。
+7. 回写 `docs/todo.md`：勾选任务、补“结果备注”和“遗留风险”。
+8. 提交时在 commit message 中包含任务编号（示例：`feat: implement P6-S1-A pg vector store`）。
 
 ---
 
@@ -176,4 +207,3 @@
 - 总体方案：`docs/master-plan-v2.md`
 - 详细步骤：`docs/implementation-roadmap-v2.md`
 - 可行性评估：`docs/feasibility-assessment.md`
-
