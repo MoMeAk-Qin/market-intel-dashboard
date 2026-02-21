@@ -47,7 +47,7 @@ from .models import (
     FactCheck,
 )
 from .state import InMemoryStore
-from .services.ingestion import hot_tags, refresh_store
+from .services.ingestion import hot_tags, refresh_store, write_vectors
 from .services.analysis import analyze_financial_sources
 from .services.task_queue import AnalysisTaskQueue
 from .services.vector_store import (
@@ -134,7 +134,7 @@ def create_app() -> FastAPI:
             vector_store_ready = False
             return report
         try:
-            vector_store.upsert_events(store.events)
+            write_vectors(store.events, config, vector_store)
             vector_store_ready = True
         except EmbeddingsUnavailable as exc:
             logger.warning("vector_store_embeddings_unavailable error=%s", exc)

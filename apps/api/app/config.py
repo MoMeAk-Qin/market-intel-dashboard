@@ -83,7 +83,9 @@ class AppConfig:
     qwen_temperature: float
     qwen_max_tokens: int
     enable_vector_store: bool
+    enable_pgvector: bool
     vector_backend: Literal["chroma", "simple", "pgvector"]
+    pg_dsn: str
     pgvector_dsn: str
     pgvector_table: str
     enable_market_quotes: bool
@@ -175,8 +177,13 @@ class AppConfig:
             qwen_temperature=float(os.getenv("QWEN_TEMPERATURE", "0.2")),
             qwen_max_tokens=int(os.getenv("QWEN_MAX_TOKENS", "512")),
             enable_vector_store=_get_bool(os.getenv("ENABLE_VECTOR_STORE"), True),
-            vector_backend=_get_vector_backend(os.getenv("VECTOR_BACKEND", "chroma")),
-            pgvector_dsn=os.getenv("PGVECTOR_DSN", ""),
+            enable_pgvector=_get_bool(os.getenv("ENABLE_PGVECTOR"), False),
+            vector_backend=_get_vector_backend(
+                os.getenv("VECTOR_BACKEND"),
+                _get_bool(os.getenv("ENABLE_PGVECTOR"), False),
+            ),
+            pg_dsn=_get_pg_dsn(os.getenv("PG_DSN"), os.getenv("PGVECTOR_DSN")),
+            pgvector_dsn=_get_pg_dsn(os.getenv("PG_DSN"), os.getenv("PGVECTOR_DSN")),
             pgvector_table=os.getenv("PGVECTOR_TABLE", "event_evidence_vectors"),
             enable_market_quotes=_get_bool(os.getenv("ENABLE_MARKET_QUOTES"), True),
             quotes_api_url=os.getenv(
@@ -195,8 +202,13 @@ class AppConfig:
         )
 
 
-def _get_vector_backend(value: str | None) -> Literal["chroma", "simple", "pgvector"]:
-    normalized = (value or "chroma").strip().lower()
+def _get_vector_backend(
+    value: str | None,
+    enable_pgvector: bool,
+) -> Literal["chroma", "simple", "pgvector"]:
+    if value is None or not value.strip():
+        return "pgvector" if enable_pgvector else "chroma"
+    normalized = value.strip().lower()
     if normalized == "chroma":
         return "chroma"
     if normalized == "simple":
@@ -204,3 +216,11 @@ def _get_vector_backend(value: str | None) -> Literal["chroma", "simple", "pgvec
     if normalized == "pgvector":
         return "pgvector"
     return "chroma"
+
+
+def _get_pg_dsn(pg_dsn: str | None, pgvector_dsn: str | None) -> str:
+    if pg_dsn and pg_dsn.strip():
+        return pg_dsn.strip()
+    if pgvector_dsn and pgvector_dsn.strip():
+        return pgvector_dsn.strip()
+    return ""

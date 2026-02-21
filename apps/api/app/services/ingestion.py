@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import logging
 import time
 from collections.abc import Awaitable, Iterable
+from typing import TYPE_CHECKING
 
 from ..config import AppConfig
 from ..models import Event, QuoteSnapshot, RefreshReport
@@ -18,6 +19,9 @@ from ..sources.quotes import fetch_quote_snapshots
 from ..sources.rss import fetch_rss_events
 from ..sources.treasury import fetch_treasury_events
 from .seed import HOT_TAGS, build_seed_events
+
+if TYPE_CHECKING:
+    from .vector_store import BaseVectorStore
 
 logger = logging.getLogger("ingestion")
 
@@ -137,3 +141,19 @@ def _to_utc(value: datetime) -> datetime:
 
 def hot_tags() -> list[str]:
     return HOT_TAGS
+
+
+def write_vectors(events: list[Event], config: AppConfig, vector_store: "BaseVectorStore") -> int:
+    backend = config.vector_backend.strip().lower()
+    if backend in {"chroma", "simple"}:
+        return vector_store.upsert_events(events)
+    if backend == "pgvector":
+        from .pg_vector_store import PgVectorStore
+
+        if not isinstance(vector_store, PgVectorStore):
+            logger.warning(
+                "vector_store_backend_mismatch expected=pgvector actual=%s",
+                type(vector_store).__name__,
+            )
+        return vector_store.upsert_events(events)
+    raise ValueError(f"Unsupported vector backend: {backend}")

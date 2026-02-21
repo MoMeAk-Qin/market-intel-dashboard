@@ -83,7 +83,18 @@ def test_vector_backend_accepts_pgvector(monkeypatch) -> None:
 def test_pgvector_backend_requires_dsn(monkeypatch) -> None:
     monkeypatch.setenv("ENABLE_VECTOR_STORE", "true")
     monkeypatch.setenv("VECTOR_BACKEND", "pgvector")
+    monkeypatch.delenv("PG_DSN", raising=False)
     monkeypatch.delenv("PGVECTOR_DSN", raising=False)
     config = AppConfig.from_env()
-    with pytest.raises(RuntimeError, match="PGVECTOR_DSN"):
+    with pytest.raises(RuntimeError, match="PG_DSN/PGVECTOR_DSN"):
         create_vector_store(config)
+
+
+def test_pg_dsn_alias_populates_legacy_field(monkeypatch) -> None:
+    monkeypatch.setenv("PG_DSN", "postgresql://example/new")
+    monkeypatch.delenv("PGVECTOR_DSN", raising=False)
+
+    config = AppConfig.from_env()
+
+    assert config.pg_dsn == "postgresql://example/new"
+    assert config.pgvector_dsn == "postgresql://example/new"

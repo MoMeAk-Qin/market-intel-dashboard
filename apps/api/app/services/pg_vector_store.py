@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-import logging
-import os
-from dataclasses import dataclass
+from collections.abc import Sequence
+import json
+import re
 from datetime import datetime
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any
 
 from ..config import AppConfig
 from ..models import Event, EventEvidence
+from .vector_store import EmbeddingsUnavailable, RetrievedEvidence, VectorStoreDisabled
 
 if TYPE_CHECKING:
     from chromadb.api.types import Metadata as ChromaMetadata, PyEmbedding
@@ -16,29 +17,7 @@ else:
     type ChromaMetadata = dict[str, str | int | float | bool | None]
     type PyEmbedding = list[float]
 
-logger = logging.getLogger("vector_store")
-
-
-class VectorStoreDisabled(RuntimeError):
-    pass
-
-
-class EmbeddingsUnavailable(RuntimeError):
-    pass
-
-
-@dataclass(frozen=True)
-class RetrievedEvidence:
-    evidence: EventEvidence
-    score: float
-
-
-class BaseVectorStore(Protocol):
-    def is_ready(self) -> bool: ...
-
-    def upsert_events(self, events: list[Event]) -> int: ...
-
-    def query(self, query_text: str, *, top_k: int) -> list[RetrievedEvidence]: ...
+_SQL_IDENTIFIER_PATTERN = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
 def _coerce_iso_datetime(value: str) -> datetime:
@@ -48,16 +27,35 @@ def _coerce_iso_datetime(value: str) -> datetime:
         return datetime.utcnow()
 
 
-class ChromaVectorStore:
+def _validate_sql_identifier(value: str) -> str:
+    normalized = value.strip()
+    if not _SQL_IDENTIFIER_PATTERN.fullmatch(normalized):
+        raise ValueError(f"Invalid SQL identifier: {value}")
+    return normalized
+
+
+def _vector_literal(values: Sequence[float | int]) -> str:
+    return "[" + ",".join(f"{float(item):.12g}" for item in values) + "]"
+
+
+class PgVectorStore:
     def __init__(self, config: AppConfig) -> None:
         self._config = config
         if not config.enable_vector_store:
             raise VectorStoreDisabled("Vector store disabled by config")
 
+        self._dsn = config.pg_dsn.strip()
+        if not self._dsn:
+            raise RuntimeError("PG_DSN/PGVECTOR_DSN is required when VECTOR_BACKEND=pgvector")
+        self._table = _validate_sql_identifier(config.pgvector_table)
+
         try:
-            import chromadb
+            import psycopg  # pyright: ignore[reportMissingImports] - optional pgvector dependency
         except ImportError as exc:
-            raise RuntimeError("chromadb is required for chroma backend") from exc
+            raise RuntimeError(
+                "psycopg is required for pgvector backend (install: uv add --project apps/api \"psycopg[binary]\")"
+            ) from exc
+        self._psycopg = psycopg
 
         self._dashscope = None
         if config.dashscope_api_key:
@@ -67,17 +65,49 @@ class ChromaVectorStore:
                 dashscope.api_key = config.dashscope_api_key
                 self._dashscope = dashscope
             except ImportError as exc:
-                raise RuntimeError("dashscope is required for chroma backend") from exc
+                raise RuntimeError("dashscope is required for pgvector backend") from exc
 
-        os.makedirs(config.chroma_path, exist_ok=True)
-        self._client = chromadb.PersistentClient(path=config.chroma_path)
-        self._collection = self._client.get_or_create_collection(
-            name=config.chroma_collection_sources,
-            metadata={"hnsw:space": "cosine"},
-        )
+        self._ensure_schema()
+
+    def _connect(self):
+        return self._psycopg.connect(self._dsn, autocommit=True)
+
+    def _ensure_schema(self) -> None:
+        with self._connect() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("CREATE EXTENSION IF NOT EXISTS vector")
+                cursor.execute(
+                    f"""
+                    CREATE TABLE IF NOT EXISTS {self._table} (
+                        doc_id TEXT PRIMARY KEY,
+                        document TEXT NOT NULL,
+                        embedding vector NOT NULL,
+                        metadata JSONB NOT NULL,
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                    """
+                )
 
     def is_ready(self) -> bool:
         return bool(self._config.dashscope_api_key)
+
+    def healthcheck(self) -> dict[str, Any]:
+        with self._connect() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT extname FROM pg_extension WHERE extname = 'vector'")
+                extension_ok = cursor.fetchone() is not None
+                cursor.execute("SELECT to_regclass(%s)", (self._table,))
+                table_ok = cursor.fetchone()[0] is not None
+                cursor.execute(f"SELECT count(*) FROM {self._table}")
+                rows = int(cursor.fetchone()[0])
+
+        return {
+            "ok": extension_ok and table_ok,
+            "extension_vector": extension_ok,
+            "table_exists": table_ok,
+            "table": self._table,
+            "rows": rows,
+        }
 
     def _embed_texts(self, texts: list[str]) -> list[PyEmbedding]:
         if not self._config.dashscope_api_key:
@@ -125,10 +155,7 @@ class ChromaVectorStore:
             items.append((order, [float(x) for x in emb]))
 
         items.sort(key=lambda pair: pair[0])
-        vectors = [vec for _, vec in items]
-        if len(vectors) != len(texts):
-            logger.warning("dashscope_embeddings_mismatch expected=%s got=%s", len(texts), len(vectors))
-        return vectors
+        return [vec for _, vec in items]
 
     def upsert_events(self, events: list[Event]) -> int:
         ids: list[str] = []
@@ -172,36 +199,61 @@ class ChromaVectorStore:
             return 0
 
         embeddings = self._embed_texts(documents)
-        self._collection.upsert(
-            ids=ids,
-            documents=documents,
-            metadatas=metadatas,
-            embeddings=embeddings,
-        )
-        logger.info("chroma_upsert count=%s", len(ids))
+        with self._connect() as conn:
+            with conn.cursor() as cursor:
+                for doc_id, document, metadata, embedding in zip(ids, documents, metadatas, embeddings):
+                    cursor.execute(
+                        f"""
+                        INSERT INTO {self._table} (doc_id, document, embedding, metadata, updated_at)
+                        VALUES (%s, %s, %s::vector, %s::jsonb, NOW())
+                        ON CONFLICT (doc_id) DO UPDATE
+                        SET document = EXCLUDED.document,
+                            embedding = EXCLUDED.embedding,
+                            metadata = EXCLUDED.metadata,
+                            updated_at = NOW()
+                        """,
+                        (
+                            doc_id,
+                            document,
+                            _vector_literal(embedding),
+                            json.dumps(metadata, ensure_ascii=False),
+                        ),
+                    )
+
         return len(ids)
 
     def query(self, query_text: str, *, top_k: int) -> list[RetrievedEvidence]:
-        query_text = query_text.strip()
-        if not query_text:
+        normalized = query_text.strip()
+        if not normalized:
             return []
 
-        query_embedding = self._embed_texts([query_text])[0]
-        result = self._collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            include=["metadatas", "documents", "distances"],
-        )
-
-        ids = (result.get("ids") or [[]])[0]
-        metadatas = (result.get("metadatas") or [[]])[0]
-        documents = (result.get("documents") or [[]])[0]
-        distances = (result.get("distances") or [[]])[0]
+        query_embedding = self._embed_texts([normalized])[0]
+        vector = _vector_literal(query_embedding)
+        with self._connect() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    SELECT doc_id, document, metadata, (1 - (embedding <=> %s::vector)) AS score
+                    FROM {self._table}
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT %s
+                    """,
+                    (vector, vector, max(top_k, 1)),
+                )
+                rows = cursor.fetchall()
 
         retrieved: list[RetrievedEvidence] = []
-        for doc_id, metadata, document, distance in zip(ids, metadatas, documents, distances):
+        for row in rows:
+            doc_id, document, metadata_raw, score_raw = row
+            metadata = metadata_raw
+            if isinstance(metadata_raw, str):
+                try:
+                    metadata = json.loads(metadata_raw)
+                except ValueError:
+                    metadata = {}
             if not isinstance(metadata, dict):
                 continue
+
             excerpt = ""
             if isinstance(document, str):
                 for line in reversed(document.splitlines()):
@@ -216,28 +268,7 @@ class ChromaVectorStore:
                 published_at=_coerce_iso_datetime(str(metadata.get("published_at") or "")),
                 excerpt=excerpt,
             )
-            score = 1.0 - float(distance) if distance is not None else 0.0
+            score = float(score_raw) if score_raw is not None else 0.0
             retrieved.append(RetrievedEvidence(evidence=evidence, score=score))
 
         return retrieved
-
-
-VectorStore = ChromaVectorStore
-
-
-def create_vector_store(config: AppConfig) -> BaseVectorStore:
-    if not config.enable_vector_store:
-        raise VectorStoreDisabled("Vector store disabled by config")
-
-    backend = config.vector_backend.strip().lower()
-    if backend == "chroma":
-        return ChromaVectorStore(config)
-    if backend == "simple":
-        from .simple_vector_store import SimpleVectorStore
-
-        return SimpleVectorStore(config)
-    if backend == "pgvector":
-        from .pg_vector_store import PgVectorStore
-
-        return PgVectorStore(config)
-    raise ValueError(f"Unsupported vector backend: {backend}")
