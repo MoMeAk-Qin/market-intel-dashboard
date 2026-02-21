@@ -64,7 +64,7 @@
 - [x] 阶段4：任务编排与向量可插拔
 - [x] 阶段5：能力扩展（真实行情 + 统一模型 + E2E + 可选 pgvector）
 - [x] 阶段99：静态类型告警收口（并行低优先）
-- [ ] 阶段6：Postgres + pgvector 索引优化与运维脚本
+- [x] 阶段6：Postgres + pgvector 索引优化与运维脚本
 - [ ] 阶段7：Research 页面真实数据链路
 - [ ] 阶段8：未上市公司情报引擎
 - [ ] 阶段9：科技热度 + 关联分析 + 因果链路
@@ -104,18 +104,25 @@
 
 ### 4.1 任务清单（P6-S1）
 
-- [ ] `P6-S1-A` 新建 `apps/api/app/services/pg_vector_store.py`，实现 upsert/query/healthcheck
-- [ ] `P6-S1-B` 修改 `apps/api/app/config.py`，新增 `ENABLE_PGVECTOR`、`PG_DSN`、`PGVECTOR_TABLE`
-- [ ] `P6-S1-C` 修改 `apps/api/app/services/ingestion.py`，实现 Chroma/PG 双路由写入
-- [ ] `P6-S1-D` 新建 `apps/api/tools/sql/001_pgvector_init.sql`（扩展、建表、索引）
-- [ ] `P6-S1-E` 新建 `apps/api/tools/pg/healthcheck.py` 与 `apps/api/tools/pg/backfill_vectors.py`
-- [ ] `P6-S1-F` 新建 `apps/api/tests/test_pg_vector_store.py`（开关行为与回退测试）
+- [x] `P6-S1-A` 新建 `apps/api/app/services/pg_vector_store.py`，实现 upsert/query/healthcheck（结果：PG 逻辑从 `vector_store.py` 渐进拆分到独立模块，工厂保持兼容）
+- [x] `P6-S1-B` 修改 `apps/api/app/config.py`，新增 `ENABLE_PGVECTOR`、`PG_DSN`、`PGVECTOR_TABLE`（结果：`PG_DSN` 优先，空时回退 `PGVECTOR_DSN`，并保留 `pgvector_dsn` 兼容字段）
+- [x] `P6-S1-C` 修改 `apps/api/app/services/ingestion.py`，实现 Chroma/PG 双路由写入（结果：新增 `write_vectors(...)` 并在 `api.refresh_and_index` 接入）
+- [x] `P6-S1-D` 新建 `apps/api/tools/sql/001_pgvector_init.sql`（扩展、建表、索引）（结果：包含 `vector` 扩展、`ivfflat(cosine)`、`updated_at` 与 `metadata` 索引）
+- [x] `P6-S1-E` 新建 `apps/api/tools/pg/healthcheck.py` 与 `apps/api/tools/pg/backfill_vectors.py`（结果：支持 `--dsn/--table/--dry-run`，dry-run 在无 DSN 下可执行）
+- [x] `P6-S1-F` 新建 `apps/api/tests/test_pg_vector_store.py`（开关行为与回退测试）（结果：覆盖开关解析、DSN 回退、工厂分支、缺依赖失败路径、ingestion 路由）
 
 ### 4.2 验收
 
-- [ ] 开关关闭时保持现有行为
-- [ ] 开关开启时写入/检索可用
-- [ ] 工具脚本可独立运行并输出状态
+- [x] 开关关闭时保持现有行为（验证：`test_vector_store_backends.py` 通过）
+- [x] 开关开启时写入/检索可用（验证：`test_pg_vector_store.py` 中工厂分支与路由写入测试通过；本轮未做真实 PG 联调）
+- [x] 工具脚本可独立运行并输出状态（验证：`healthcheck.py --dry-run`、`backfill_vectors.py --dry-run` 均返回 0 并输出步骤）
+
+阶段6验收命令记录（2026-02-21）：
+1. `uv run --project apps/api pytest -q apps/api/tests/test_vector_store_backends.py apps/api/tests/test_pg_vector_store.py apps/api/tests/test_ingestion_origin.py`：通过（`17 passed`）。
+2. `uv run --project apps/api python apps/api/tools/pg/healthcheck.py --dry-run`：通过（返回 0，输出检查步骤与默认表名）。
+3. `uv run --project apps/api python apps/api/tools/pg/backfill_vectors.py --dry-run`：通过（返回 0，输出回填步骤与默认表名）。
+4. `uvx pyright --pythonpath apps/api/.venv/bin/python apps/api/app apps/api/tests`：存在非阶段6存量告警（`http_client/hkma/部分测试`），本轮未扩范围处理。
+5. `uv run python tools/typecheck/check_pyright_baseline.py --input /tmp/pyright-stage6.json --baseline tools/typecheck/pyright-baseline.json --repo-root .`：通过（`new=0`，未引入新增告警）。
 
 ---
 

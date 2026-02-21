@@ -6,6 +6,9 @@
     "dev": "concurrently -k -n api,web -c blue,green \"uv run --project apps/api uvicorn main:app --reload --port 4000\" \"pnpm -C apps/web dev\"",
     "dev:api": "uv run --project apps/api uvicorn main:app --reload --port 4000",
     "dev:web": "pnpm -C apps/web dev",
+    "review:light": "bash tools/review/light_review.sh",
+    "review:deep": "bash tools/review/deep_review.sh",
+    "review:release": "bash tools/review/release_review.sh",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write ."
   },

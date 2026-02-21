@@ -76,7 +76,34 @@ pnpm -C apps/web test:contract
 
 # 前端 lint
 pnpm lint
+
+# Push 前轻量审查（pre-push 也会自动触发）
+pnpm review:light
+
+# 阶段结束深度审查
+pnpm review:deep -- --stage=8
+
+# 发布前全链路审查
+pnpm review:release
 ```
+
+## 周期代码审查（单人 Lite）
+
+```bash
+# 首次启用本地 pre-push 钩子
+git config core.hooksPath .githooks
+```
+
+审查节奏：
+
+1. 每次 push 前：轻量审查（自动触发 `pnpm review:light`）。
+2. 每个阶段结束：执行 `pnpm review:deep -- --stage=<phase>` 并归档报告。
+3. 发布前：执行 `pnpm review:release`，通过后再发布。
+
+报告归档路径：
+
+- 深度审查：`docs/reviews/deep/`
+- 发布审查：`docs/reviews/release/`
 
 ## 关键环境变量
 
