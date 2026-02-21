@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 import logging
 import os
 from dataclasses import dataclass
@@ -7,10 +8,16 @@ from datetime import datetime
 from http import HTTPStatus
 import json
 import re
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from ..config import AppConfig
 from ..models import Event, EventEvidence
+
+if TYPE_CHECKING:
+    from chromadb.api.types import Metadata as ChromaMetadata, PyEmbedding
+else:
+    type ChromaMetadata = dict[str, str | int | float | bool | None]
+    type PyEmbedding = list[float]
 
 logger = logging.getLogger("vector_store")
 _SQL_IDENTIFIER_PATTERN = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
@@ -52,8 +59,8 @@ def _validate_sql_identifier(value: str) -> str:
     return normalized
 
 
-def _vector_literal(values: list[float]) -> str:
-    return "[" + ",".join(f"{item:.12g}" for item in values) + "]"
+def _vector_literal(values: Sequence[float | int]) -> str:
+    return "[" + ",".join(f"{float(item):.12g}" for item in values) + "]"
 
 
 class ChromaVectorStore:
@@ -87,7 +94,7 @@ class ChromaVectorStore:
     def is_ready(self) -> bool:
         return bool(self._config.dashscope_api_key)
 
-    def _embed_texts(self, texts: list[str]) -> list[list[float]]:
+    def _embed_texts(self, texts: list[str]) -> list[PyEmbedding]:
         if not self._config.dashscope_api_key:
             raise EmbeddingsUnavailable("DASHSCOPE_API_KEY not configured (embeddings disabled)")
         if self._dashscope is None:
@@ -118,7 +125,7 @@ class ChromaVectorStore:
         if not isinstance(embeddings, list):
             raise EmbeddingsUnavailable("DashScope embeddings response missing output.embeddings")
 
-        items: list[tuple[int, list[float]]] = []
+        items: list[tuple[int, PyEmbedding]] = []
         for idx, item in enumerate(embeddings):
             if not isinstance(item, dict):
                 continue
@@ -141,7 +148,7 @@ class ChromaVectorStore:
     def upsert_events(self, events: list[Event]) -> int:
         ids: list[str] = []
         documents: list[str] = []
-        metadatas: list[dict[str, Any]] = []
+        metadatas: list[ChromaMetadata] = []
 
         for event in events:
             for evidence in event.evidence:
@@ -242,7 +249,7 @@ class PgVectorStore:
         self._table = _validate_sql_identifier(config.pgvector_table)
 
         try:
-            import psycopg
+            import psycopg  # pyright: ignore[reportMissingImports] - optional pgvector dependency
         except ImportError as exc:
             raise RuntimeError(
                 "psycopg is required for pgvector backend (install: uv add --project apps/api \"psycopg[binary]\")"
@@ -283,7 +290,7 @@ class PgVectorStore:
     def is_ready(self) -> bool:
         return bool(self._config.dashscope_api_key)
 
-    def _embed_texts(self, texts: list[str]) -> list[list[float]]:
+    def _embed_texts(self, texts: list[str]) -> list[PyEmbedding]:
         if not self._config.dashscope_api_key:
             raise EmbeddingsUnavailable("DASHSCOPE_API_KEY not configured (embeddings disabled)")
         if self._dashscope is None:
@@ -314,7 +321,7 @@ class PgVectorStore:
         if not isinstance(embeddings, list):
             raise EmbeddingsUnavailable("DashScope embeddings response missing output.embeddings")
 
-        items: list[tuple[int, list[float]]] = []
+        items: list[tuple[int, PyEmbedding]] = []
         for idx, item in enumerate(embeddings):
             if not isinstance(item, dict):
                 continue
@@ -337,7 +344,7 @@ class PgVectorStore:
     def upsert_events(self, events: list[Event]) -> int:
         ids: list[str] = []
         documents: list[str] = []
-        metadatas: list[dict[str, Any]] = []
+        metadatas: list[ChromaMetadata] = []
 
         for event in events:
             for evidence in event.evidence:

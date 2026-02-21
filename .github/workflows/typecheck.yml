@@ -1,0 +1,24 @@
+name: Typecheck
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  pyright-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync API dependencies
+        run: uv sync --project apps/api --frozen
+
+      - name: Run pyright with baseline gate
+        run: |
+          PYTHON_BIN=$(uv run --project apps/api python -c "import sys; print(sys.executable)")
+          uvx pyright --pythonpath "$PYTHON_BIN" apps/api/app apps/api/tests --outputjson > pyright.json || true
+          uv run --project apps/api python tools/typecheck/check_pyright_baseline.py --input pyright.json --baseline tools/typecheck/pyright-baseline.json

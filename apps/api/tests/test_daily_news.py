@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from fastapi.testclient import TestClient
 
 from app.api import create_app
-from app.models import AnalysisResponse, Event, EventEvidence
+from app.models import AnalysisResponse, Event, EventEvidence, Market
 
 
 def _fixed_now(tz: ZoneInfo) -> datetime:
@@ -19,7 +19,7 @@ def _make_event(
     *,
     headline: str,
     published_at: datetime,
-    markets: list[str],
+    markets: list[Market],
     tickers: list[str],
 ) -> Event:
     return Event(

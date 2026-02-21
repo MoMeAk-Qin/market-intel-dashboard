@@ -8,7 +8,7 @@ import logging
 import httpx
 
 from ..config import AppConfig
-from ..models import Event, EventEvidence
+from ..models import Event, EventEvidence, EventType, Sector
 from ..services.http_client import request_with_retry
 
 logger = logging.getLogger("source.edgar")
@@ -179,7 +179,7 @@ def _build_events_from_submissions(
     return events
 
 
-def _map_event_type(form: str) -> str:
+def _map_event_type(form: str) -> EventType:
     if form in FORM_EARNINGS:
         return "earnings"
     if form in FORM_REGULATORY:
@@ -193,7 +193,7 @@ def _build_edgar_url(cik: str, accession: str, document: str) -> str:
     return f"https://www.sec.gov/Archives/edgar/data/{cik_numeric}/{accession_no_dash}/{document}"
 
 
-def _infer_sectors(ticker: str) -> list[str]:
+def _infer_sectors(ticker: str) -> list[Sector]:
     if ticker in SECTOR_INDUSTRIALS:
         return ["Industrials"]
     return ["Tech"] if ticker in SECTOR_TECH else ["Tech"]

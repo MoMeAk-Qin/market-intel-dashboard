@@ -7,7 +7,16 @@ import random
 
 from typing import TypeVar
 
-from ..models import AssetSeriesPoint, Event, EventEvidence, EventNumber
+from ..models import (
+    AssetSeriesPoint,
+    Event,
+    EventEvidence,
+    EventNumber,
+    EventSourceType,
+    EventType,
+    Market,
+    Sector,
+)
 
 PUBLISHERS = [
     "Bloomberg Wire",
@@ -46,7 +55,7 @@ SUMMARY_TEMPLATES = [
 
 MACRO_TAGS = ["inflation", "jobs", "growth", "liquidity", "policy"]
 
-EVENT_TYPES = [
+EVENT_TYPES: tuple[EventType, ...] = (
     "earnings",
     "guidance",
     "mna",
@@ -55,12 +64,12 @@ EVENT_TYPES = [
     "macro_release",
     "regulation",
     "risk",
-]
+)
 
-SOURCE_TYPES = ["news", "filing", "earnings", "research", "macro_data"]
+SOURCE_TYPES: tuple[EventSourceType, ...] = ("news", "filing", "earnings", "research", "macro_data")
 
-MARKETS = ["US", "HK", "FX", "RATES", "METALS"]
-SECTORS = ["Tech", "Industrials"]
+MARKETS: tuple[Market, ...] = ("US", "HK", "FX", "RATES", "METALS")
+SECTORS: tuple[Sector, ...] = ("Tech", "Industrials")
 TICKERS = ["AAPL", "MSFT", "NVDA", "0700.HK", "9988.HK", "TSLA", "AMZN", "META"]
 INSTRUMENTS = ["NASDAQ", "SPX", "DXY", "US10Y", "XAUUSD", "USDJPY"]
 

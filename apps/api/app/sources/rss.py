@@ -9,7 +9,7 @@ import feedparser
 import httpx
 
 from ..config import AppConfig
-from ..models import Event, EventEvidence
+from ..models import Event, EventEvidence, EventType, Market, Sector
 from ..services.http_client import request_with_retry
 
 logger = logging.getLogger("source.rss")
@@ -122,7 +122,7 @@ def _extract_publisher(entry: dict) -> str:
     return "RSS"
 
 
-def _infer_event_type(text: str) -> str:
+def _infer_event_type(text: str) -> EventType:
     lowered = text.lower()
     if "rate" in lowered or "fed" in lowered or "fomc" in lowered:
         return "rate_decision"
@@ -137,7 +137,7 @@ def _infer_event_type(text: str) -> str:
     return "risk"
 
 
-def _infer_markets(text: str) -> list[str]:
+def _infer_markets(text: str) -> list[Market]:
     lowered = text.lower()
     if "hong kong" in lowered or "hk" in lowered:
         return ["HK"]
@@ -158,7 +158,7 @@ def _infer_tickers(text: str) -> list[str]:
     return tickers
 
 
-def _infer_sectors(text: str) -> list[str]:
+def _infer_sectors(text: str) -> list[Sector]:
     lowered = text.lower()
     if "chip" in lowered or "ai" in lowered or "cloud" in lowered:
         return ["Tech"]

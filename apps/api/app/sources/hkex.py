@@ -11,7 +11,7 @@ import logging
 import httpx
 
 from ..config import AppConfig
-from ..models import Event, EventEvidence
+from ..models import Event, EventEvidence, EventType, Sector
 from ..services.http_client import request_with_retry
 
 logger = logging.getLogger("source.hkex")
@@ -177,7 +177,7 @@ def _format_ticker(code: str) -> str:
     return cleaned
 
 
-def _infer_event_type(title: str) -> str:
+def _infer_event_type(title: str) -> EventType:
     lowered = title.lower()
     if "results" in lowered or "earnings" in lowered:
         return "earnings"
@@ -188,7 +188,7 @@ def _infer_event_type(title: str) -> str:
     return "risk"
 
 
-def _infer_sectors(title: str) -> list[str]:
+def _infer_sectors(title: str) -> list[Sector]:
     lowered = title.lower()
     if "chip" in lowered or "ai" in lowered or "cloud" in lowered:
         return ["Tech"]

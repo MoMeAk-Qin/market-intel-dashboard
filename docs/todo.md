@@ -44,6 +44,17 @@
 
 ---
 
+## 0.3 周期代码审查节奏（Lite）
+
+1. 每次 `git push` 前自动执行轻量审查：`pnpm review:light`（由 `.githooks/pre-push` 触发）。
+2. 每个阶段结束手动执行深度审查：`pnpm review:deep -- --stage=<phase>`。
+3. 关键发布前手动执行全链路审查：`pnpm review:release`。
+4. 审查结果归档：
+- 深度审查：`docs/reviews/deep/`
+- 发布审查：`docs/reviews/release/`
+
+---
+
 ## 1. 当前进度快照
 
 - [x] 阶段0：阻塞修复与一致性
@@ -52,7 +63,7 @@
 - [x] 阶段3：HKMA 自动化与数据标准化
 - [x] 阶段4：任务编排与向量可插拔
 - [x] 阶段5：能力扩展（真实行情 + 统一模型 + E2E + 可选 pgvector）
-- [ ] 阶段99：静态类型告警收口（并行低优先）
+- [x] 阶段99：静态类型告警收口（并行低优先）
 - [ ] 阶段6：Postgres + pgvector 索引优化与运维脚本
 - [ ] 阶段7：Research 页面真实数据链路
 - [ ] 阶段8：未上市公司情报引擎
@@ -63,12 +74,11 @@
 
 ## 2. 下一步执行顺序（从现在开始）
 
-1. 阶段99（并行）：静态类型告警收口
-2. 阶段6：Postgres + pgvector
-3. 阶段7：Research 真实化
-4. 阶段8：未上市公司情报
-5. 阶段9：热度与关联分析
-6. 阶段10：多模型与定时报告
+1. 阶段6：Postgres + pgvector
+2. 阶段7：Research 真实化
+3. 阶段8：未上市公司情报
+4. 阶段9：热度与关联分析
+5. 阶段10：多模型与定时报告
 
 ---
 
@@ -76,17 +86,17 @@
 
 ### 3.1 任务清单
 
-- [ ] `P99-S1-A` 收敛 `apps/api/app/services/seed.py` 的 `Literal`/强类型告警
-- [ ] `P99-S1-B` 收敛 `apps/api/app/services/vector_store.py` 的向量参数类型告警
-- [ ] `P99-S1-C` 收敛 `apps/api/app/sources/edgar.py`、`apps/api/app/sources/hkex.py` 事件类型告警
-- [ ] `P99-S1-D` 收敛 `apps/api/app/sources/fred.py`、`apps/api/app/sources/rss.py` 文本解析与字段类型告警
-- [ ] `P99-S1-E` 收敛 `apps/api/tests/test_daily_news.py` 测试构造类型告警
-- [ ] `P99-S1-F` 将类型检查纳入 CI（失败阻断）
+- [x] `P99-S1-A` 收敛 `apps/api/app/services/seed.py` 的 `Literal`/强类型告警（结果：`EventSourceType/EventType/Market/Sector` 推断收敛）
+- [x] `P99-S1-B` 收敛 `apps/api/app/services/vector_store.py` 的向量参数类型告警（结果：Chroma 元数据/向量类型显式化，`psycopg` 可选依赖注释追踪）
+- [x] `P99-S1-C` 收敛 `apps/api/app/sources/edgar.py`、`apps/api/app/sources/hkex.py` 事件类型告警（结果：事件与行业推断函数返回强类型）
+- [x] `P99-S1-D` 收敛 `apps/api/app/sources/fred.py`、`apps/api/app/sources/rss.py` 文本解析与字段类型告警（结果：市场/事件/行业返回强类型）
+- [x] `P99-S1-E` 收敛 `apps/api/tests/test_daily_news.py` 测试构造类型告警（结果：测试 helper 参数改为 `list[Market]`）
+- [x] `P99-S1-F` 将类型检查纳入 CI（失败阻断）（结果：新增 `.github/workflows/typecheck.yml` + 基线门禁脚本）
 
 ### 3.2 验收
 
-- [ ] `uv run pyright` 无新增告警
-- [ ] 现存告警均有注释或 issue 追踪
+- [x] `uvx pyright --pythonpath apps/api/.venv/bin/python` 针对阶段99目标文件无告警
+- [x] 现存告警均有注释或追踪文档（见 `docs/typecheck-baseline.md` 与 `tools/typecheck/pyright-baseline.json`）
 
 ---
 

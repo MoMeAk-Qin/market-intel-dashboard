@@ -7,7 +7,7 @@ import logging
 import httpx
 
 from ..config import AppConfig
-from ..models import Event, EventEvidence, EventNumber
+from ..models import Event, EventEvidence, EventNumber, Market
 from ..services.http_client import request_with_retry
 
 logger = logging.getLogger("source.fred")
@@ -107,7 +107,7 @@ async def fetch_fred_events(config: AppConfig) -> list[Event]:
     return events
 
 
-def _infer_market(series_id: str) -> list[str]:
+def _infer_market(series_id: str) -> list[Market]:
     if series_id in METAL_SERIES:
         return ["METALS"]
     if series_id in RATE_SERIES:

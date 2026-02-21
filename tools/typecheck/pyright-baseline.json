@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "description": "Pyright 存量告警基线（阶段99范围外），用于阻断新增告警。",
+  "entries": [
+    {
+      "file": "apps/api/app/services/http_client.py",
+      "severity": "error",
+      "rule": "reportAttributeAccessIssue",
+      "line": 14,
+      "character": 19,
+      "message": "\"QueryParamTypes\" is not a known attribute of module \"httpx\""
+    },
+    {
+      "file": "apps/api/app/services/http_client.py",
+      "severity": "error",
+      "rule": "reportAttributeAccessIssue",
+      "line": 15,
+      "character": 20,
+      "message": "\"HeaderTypes\" is not a known attribute of module \"httpx\""
+    },
+    {
+      "file": "apps/api/app/services/http_client.py",
+      "severity": "error",
+      "rule": "reportAttributeAccessIssue",
+      "line": 16,
+      "character": 20,
+      "message": "\"CookieTypes\" is not a known attribute of module \"httpx\""
+    },
+    {
+      "file": "apps/api/app/services/http_client.py",
+      "severity": "error",
+      "rule": "reportAttributeAccessIssue",
+      "line": 17,
+      "character": 20,
+      "message": "\"RequestContent\" is not a known attribute of module \"httpx\""
+    },
+    {
+      "file": "apps/api/app/services/http_client.py",
+      "severity": "error",
+      "rule": "reportAttributeAccessIssue",
+      "line": 18,
+      "character": 17,
+      "message": "\"RequestData\" is not a known attribute of module \"httpx\""
+    },
+    {
+      "file": "apps/api/app/services/http_client.py",
+      "severity": "error",
+      "rule": "reportAttributeAccessIssue",
+      "line": 19,
+      "character": 18,
+      "message": "\"RequestFiles\" is not a known attribute of module \"httpx\""
+    },
+    {
+      "file": "apps/api/app/services/http_client.py",
+      "severity": "error",
+      "rule": "reportAttributeAccessIssue",
+      "line": 21,
+      "character": 20,
+      "message": "\"TimeoutTypes\" is not a known attribute of module \"httpx\""
+    },
+    {
+      "file": "apps/api/app/sources/hkma.py",
+      "severity": "error",
+      "rule": "reportArgumentType",
+      "line": 348,
+      "character": 17,
+      "message": "Argument of type \"list[str]\" cannot be assigned to parameter \"markets\" of type \"list[Market]\" in function \"__init__\""
+    },
+    {
+      "file": "apps/api/app/sources/hkma_discovery.py",
+      "severity": "error",
+      "rule": "reportArgumentType",
+      "line": 236,
+      "character": 31,
+      "message": "Argument of type \"str\" cannot be assigned to parameter \"frequency\" of type \"HKMAFrequency\" in function \"__init__\""
+    },
+    {
+      "file": "apps/api/tests/test_asset_profile_endpoint.py",
+      "severity": "error",
+      "rule": "reportArgumentType",
+      "line": 99,
+      "character": 19,
+      "message": "Argument of type \"str\" cannot be assigned to parameter \"range\" of type \"Literal['1D', '1W', '1M', '1Y']\" in function \"__init__\""
+    },
+    {
+      "file": "apps/api/tests/test_asset_profile_endpoint.py",
+      "severity": "error",
+      "rule": "reportArgumentType",
+      "line": 172,
+      "character": 19,
+      "message": "Argument of type \"str\" cannot be assigned to parameter \"range\" of type \"Literal['1D', '1W', '1M', '1Y']\" in function \"__init__\""
+    },
+    {
+      "file": "apps/api/tests/test_qa_endpoint.py",
+      "severity": "error",
+      "rule": "reportArgumentType",
+      "line": 30,
+      "character": 17,
+      "message": "Argument of type \"list[str]\" cannot be assigned to parameter \"markets\" of type \"list[Market]\" in function \"__init__\""
+    }
+  ]
+}
