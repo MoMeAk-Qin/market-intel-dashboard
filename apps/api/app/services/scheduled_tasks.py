@@ -143,11 +143,23 @@ class ScheduledReportService:
         tz = ZoneInfo(self._config.timezone)
         filtered = []
         for event in events:
-            event_time = event.event_time.astimezone(tz) if event.event_time.tzinfo else event.event_time.replace(tzinfo=UTC).astimezone(tz)
+            event_time = (
+                event.event_time.astimezone(tz)
+                if event.event_time.tzinfo
+                else event.event_time.replace(tzinfo=UTC).astimezone(tz)
+            )
             if event_time.date() != target_date:
                 continue
             filtered.append(event)
-        filtered.sort(key=lambda item: (item.impact, item.event_time), reverse=True)
+        filtered.sort(
+            key=lambda item: (
+                item.impact,
+                item.event_time.astimezone(UTC)
+                if item.event_time.tzinfo
+                else item.event_time.replace(tzinfo=UTC),
+            ),
+            reverse=True,
+        )
         return filtered
 
     @staticmethod
