@@ -91,7 +91,7 @@ fi
 
 if has_changed_regex '^(apps/web/src/|packages/shared/)'; then
   log "检测到前端/共享类型改动，执行 eslint。"
-  run_cmd "$PNPM_BIN" lint -- --max-warnings=0
+  run_cmd "$PNPM_BIN" exec eslint . --ext .ts,.tsx --max-warnings=0
 fi
 
 if has_changed_regex '^(apps/api/app/api\.py|apps/api/app/services/analysis\.py|apps/api/app/services/task_queue\.py|apps/api/tests/test_qa_endpoint\.py|apps/api/tests/test_analysis_service\.py|apps/api/tests/test_analysis_tasks_endpoint\.py|apps/web/src/lib/api\.ts)'; then
