@@ -3,7 +3,31 @@
 @tailwind utilities;
 
 :root {
-  --radius: 0.75rem;
+  --background: 224 56% 9%;
+  --foreground: 210 40% 96%;
+  --card: 221 45% 12%;
+  --card-foreground: 210 40% 96%;
+  --popover: 221 45% 11%;
+  --popover-foreground: 210 40% 96%;
+  --primary: 192 91% 58%;
+  --primary-foreground: 224 56% 9%;
+  --secondary: 216 32% 18%;
+  --secondary-foreground: 210 40% 96%;
+  --muted: 217 27% 22%;
+  --muted-foreground: 214 20% 76%;
+  --accent: 158 64% 45%;
+  --accent-foreground: 224 56% 9%;
+  --destructive: 0 78% 61%;
+  --destructive-foreground: 210 40% 96%;
+  --border: 217 32% 29%;
+  --input: 217 32% 24%;
+  --ring: 192 91% 58%;
+  --chart-1: 192 91% 58%;
+  --chart-2: 158 64% 45%;
+  --chart-3: 43 96% 56%;
+  --chart-4: 346 84% 61%;
+  --chart-5: 267 83% 71%;
+  --radius: 0.8rem;
   --font-sans:
     'Exo 2',
     'Orbitron',
@@ -12,21 +36,29 @@
     -apple-system,
     sans-serif;
   --font-serif: Georgia, serif;
-  --bg-primary: #050812;
-  --bg-secondary: #090f1f;
-  --text-primary: #e2e8f0;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
 }
 
 body {
   position: relative;
   min-height: 100vh;
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
-  color: var(--text-primary);
+  color: hsl(var(--foreground));
   background:
     radial-gradient(circle at 10% 12%, rgba(56, 189, 248, 0.22), transparent 40%),
     radial-gradient(circle at 86% 6%, rgba(16, 185, 129, 0.2), transparent 40%),
     radial-gradient(circle at 45% 118%, rgba(59, 130, 246, 0.18), transparent 52%),
-    linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 48%, #040711 100%);
+    linear-gradient(
+      135deg,
+      hsl(var(--background)) 0%,
+      hsl(221 42% 11%) 48%,
+      hsl(224 58% 7%) 100%
+    );
   overflow-x: hidden;
 }
 
@@ -59,8 +91,12 @@ h3 {
 }
 
 .glass-panel {
-  background: linear-gradient(145deg, rgba(15, 23, 42, 0.74), rgba(15, 23, 42, 0.42));
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: linear-gradient(
+    145deg,
+    hsl(var(--card) / 0.88),
+    hsl(var(--card) / 0.52)
+  );
+  border: 1px solid hsl(var(--border) / 0.72);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.1),
     0 22px 45px rgba(2, 6, 23, 0.42);

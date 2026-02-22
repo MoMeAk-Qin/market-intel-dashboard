@@ -183,6 +183,85 @@ export type DailySummaryResponse = {
   sources: EventEvidence[];
 };
 
+export type ResearchSourceType = 'live' | 'fallback';
+export type ResearchCompanyType = 'listed' | 'unlisted';
+
+export type ResearchNewsItem = {
+  event_id: string;
+  headline: string;
+  summary: string;
+  publisher: string;
+  event_time: string;
+  event_type: EventType;
+  impact: number;
+  confidence: number;
+  source_type: EventSourceType;
+  source_url: string;
+  quote_id?: string | null;
+};
+
+export type ResearchAnalysisBlock = {
+  answer: string;
+  model: string;
+  is_fallback: boolean;
+  sources: EventEvidence[];
+};
+
+export type ResearchCompanyResponse = {
+  ticker: string;
+  company_type: ResearchCompanyType;
+  source_type: ResearchSourceType;
+  updated_at: string;
+  quote?: QuoteSnapshot | null;
+  earnings_card?: {
+    headline: string;
+    eps: { value: number; yoy?: number | null };
+    revenue: { value: number; yoy?: number | null };
+    guidance: string;
+    sentiment: string;
+  } | null;
+  news: ResearchNewsItem[];
+  analysis: ResearchAnalysisBlock;
+  note?: string | null;
+};
+
+export type UnlistedSourceType = 'seed' | 'live';
+export type UnlistedCompanyStatus = 'unlisted';
+
+export type UnlistedCompany = {
+  company_id: string;
+  name: string;
+  status: UnlistedCompanyStatus;
+  core_products: string[];
+  related_concepts: string[];
+  description: string;
+  source_type: UnlistedSourceType;
+  updated_at: string;
+};
+
+export type UnlistedEvent = {
+  company_id: string;
+  event_id: string;
+  event_time: string;
+  headline: string;
+  summary: string;
+  publisher: string;
+  event_type: EventType;
+  impact: number;
+  confidence: number;
+  source_type: UnlistedSourceType;
+  source_url: string;
+  quote_id?: string | null;
+};
+
+export type UnlistedCompanyResponse = {
+  company: UnlistedCompany;
+  timeline: UnlistedEvent[];
+  total_events: number;
+  updated_at: string;
+  note?: string | null;
+};
+
 export type HealthResponse = {
   ok: boolean;
   store_events: number;
@@ -204,4 +283,85 @@ export type DashboardSummary = {
   key_assets: Array<{ id: string; name: string; value: number; changePct: number }>;
   timeline: Array<{ lane: 'macro' | 'industry' | 'company' | 'policy_risk'; events: Event[] }>;
   hot_tags: string[];
+};
+
+export type CorrelationPreset = 'A' | 'B' | 'C';
+export type CorrelationWindowDays = 7 | 30 | 90;
+export type HeatLevel = 'low' | 'medium' | 'high';
+export type HeatSourceType = 'live' | 'seed' | 'mixed';
+
+export type TechHeatItem = {
+  asset_id: string;
+  market: string;
+  latest_price?: number | null;
+  change_pct?: number | null;
+  mentions_7d: number;
+  avg_impact: number;
+  heat_score: number;
+  level: HeatLevel;
+  source_type: HeatSourceType;
+};
+
+export type TechHeatmapResponse = {
+  generated_at: string;
+  threshold: number;
+  items: TechHeatItem[];
+};
+
+export type CorrelationMatrixResponse = {
+  preset: CorrelationPreset;
+  window_days: CorrelationWindowDays;
+  assets: string[];
+  matrix: number[][];
+  fallback_assets: string[];
+  updated_at: string;
+  note?: string | null;
+};
+
+export type CausalAnalyzeRequest = {
+  event_id?: string;
+  query?: string;
+  max_depth?: number;
+};
+
+export type CausalNode = {
+  level: number;
+  label: string;
+  detail: string;
+  related_assets: string[];
+  confidence: number;
+  evidence: EventEvidence[];
+};
+
+export type CausalAnalyzeResponse = {
+  event_id?: string | null;
+  source_type: HeatSourceType;
+  summary: string;
+  nodes: CausalNode[];
+  generated_at: string;
+};
+
+export type ModelRegistryResponse = {
+  active_model: string;
+  default_model: string;
+  available_models: string[];
+};
+
+export type ModelSwitchRequest = {
+  model: string;
+};
+
+export type ReportStatus = 'idle' | 'running' | 'completed' | 'failed';
+export type ReportSourceType = 'live' | 'fallback';
+
+export type DailyReportSnapshot = {
+  report_id: string;
+  target_date: string;
+  generated_at?: string | null;
+  status: ReportStatus;
+  model: string;
+  source_type: ReportSourceType;
+  summary?: string | null;
+  total_events: number;
+  error?: string | null;
 };

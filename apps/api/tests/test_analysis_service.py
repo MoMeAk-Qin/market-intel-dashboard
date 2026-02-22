@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from app.config import AppConfig
-from app.models import AnalysisRequest
+from app.models import AnalysisRequest, EarningsCard, Metric, ResearchNewsItem
 import app.services.analysis as analysis_module
 
 
@@ -120,3 +121,83 @@ def test_analysis_cache_reuse(monkeypatch) -> None:
     assert response_first.answer == response_second.answer
     assert counter["calls"] == 1
 
+
+def test_research_analysis_fallback_without_dashscope_key(monkeypatch) -> None:
+    analysis_module._ANALYSIS_CACHE.clear()
+    monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+    config = AppConfig.from_env()
+
+    news = [
+        ResearchNewsItem(
+            event_id="evt-1",
+            headline="AAPL demand remains resilient",
+            summary="Channel checks show stable momentum.",
+            publisher="Test Publisher",
+            event_time=datetime(2026, 2, 22, 9, 0, tzinfo=timezone.utc),
+            event_type="risk",
+            impact=66,
+            confidence=0.72,
+            source_type="news",
+            source_url="https://example.com/news/1",
+            quote_id="q-evt-1",
+        )
+    ]
+
+    response = analysis_module.analyze_research_company(
+        ticker="AAPL",
+        news=news,
+        earnings_card=None,
+        config=config,
+        vector_store=None,
+    )
+    assert response.is_fallback is True
+    assert response.model == "rule-based"
+    assert response.sources[0].source_url == "https://example.com/news/1"
+
+
+def test_research_analysis_uses_llm_response_and_source_fallback(monkeypatch) -> None:
+    analysis_module._ANALYSIS_CACHE.clear()
+    config = _build_config(monkeypatch)
+
+    news = [
+        ResearchNewsItem(
+            event_id="evt-2",
+            headline="AAPL margin trend stabilizes",
+            summary="Cost discipline remains intact.",
+            publisher="Test Publisher",
+            event_time=datetime(2026, 2, 22, 10, 0, tzinfo=timezone.utc),
+            event_type="risk",
+            impact=62,
+            confidence=0.71,
+            source_type="news",
+            source_url="https://example.com/news/2",
+            quote_id="q-evt-2",
+        )
+    ]
+
+    def _fake_analyze(payload, cfg, vector_store=None, model_name=None):
+        return analysis_module.AnalysisResponse(
+            answer="【结论】测试[1]\n【影响】测试[1]\n【风险】测试[1]\n【关注点】测试[1]",
+            model=model_name or "qwen3-max",
+            usage=None,
+            sources=[],
+        )
+
+    monkeypatch.setattr(analysis_module, "analyze_financial_sources", _fake_analyze)
+
+    response = analysis_module.analyze_research_company(
+        ticker="AAPL",
+        news=news,
+        earnings_card=EarningsCard(
+            headline="AAPL 财报快照",
+            eps=Metric(value=2.3, yoy=0.1),
+            revenue=Metric(value=34.1, yoy=0.06),
+            guidance="Guidance stable",
+            sentiment="Constructive",
+        ),
+        config=config,
+        vector_store=None,
+    )
+    assert response.is_fallback is False
+    assert response.model == "qwen3-max"
+    assert response.sources[0].quote_id == "q-evt-2"

@@ -8,6 +8,8 @@ import type { DashboardSummary } from '@market/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ModelSelector } from '@/components/ModelSelector';
+import { ReportBadge } from '@/components/ReportBadge';
 import { Skeleton } from '@/components/ui/skeleton';
 
 const laneLabel: Record<string, string> = {
@@ -50,8 +52,8 @@ export default function HomePage() {
             Phase 1 开发中
           </Badge>
         </div>
-        <h1 className="mt-4 text-3xl font-semibold text-slate-50 md:text-4xl">跨市场情报总览</h1>
-        <p className="mt-3 max-w-2xl text-sm text-slate-300">
+        <h1 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">跨市场情报总览</h1>
+        <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
           聚合事件流、今日新闻、问答分析与日报摘要。当前重点是先打通可观测与前端闭环。
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
@@ -62,10 +64,20 @@ export default function HomePage() {
             <Button variant="outline">生成日报摘要</Button>
           </Link>
           <Link href="/search">
-            <Button variant="ghost" className="text-slate-200 hover:bg-slate-800 hover:text-white">
+            <Button variant="ghost" className="text-foreground hover:bg-muted/55 hover:text-foreground">
               打开问答分析
             </Button>
           </Link>
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <div className="rounded-xl border border-border/70 bg-background/35 p-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">模型配置</p>
+            <ModelSelector />
+          </div>
+          <div className="rounded-xl border border-border/70 bg-background/35 p-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">每日报告状态</p>
+            <ReportBadge />
+          </div>
         </div>
       </section>
 
@@ -81,7 +93,7 @@ export default function HomePage() {
             <CardTitle className="text-base">总览加载失败</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-sm text-slate-600">无法获取 `/dashboard/summary`，请确认 API 服务可用后重试。</p>
+            <p className="text-sm text-muted-foreground">无法获取 `/dashboard/summary`，请确认 API 服务可用后重试。</p>
             <Button onClick={() => refetch()}>重试</Button>
           </CardContent>
         </Card>
@@ -90,34 +102,34 @@ export default function HomePage() {
           <section className="grid gap-4 md:grid-cols-4">
             <Card className="fade-up">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-slate-500">高影响事件</CardTitle>
+                <CardTitle className="text-sm text-muted-foreground">高影响事件</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-3xl font-semibold text-slate-900">{data.kpis.major}</p>
+                <p className="text-3xl font-semibold text-foreground">{data.kpis.major}</p>
               </CardContent>
             </Card>
             <Card className="fade-up">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-slate-500">宏观事件</CardTitle>
+                <CardTitle className="text-sm text-muted-foreground">宏观事件</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-3xl font-semibold text-slate-900">{data.kpis.macro}</p>
+                <p className="text-3xl font-semibold text-foreground">{data.kpis.macro}</p>
               </CardContent>
             </Card>
             <Card className="fade-up">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-slate-500">公司事件</CardTitle>
+                <CardTitle className="text-sm text-muted-foreground">公司事件</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-3xl font-semibold text-slate-900">{data.kpis.company}</p>
+                <p className="text-3xl font-semibold text-foreground">{data.kpis.company}</p>
               </CardContent>
             </Card>
             <Card className="fade-up">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-slate-500">风险事件</CardTitle>
+                <CardTitle className="text-sm text-muted-foreground">风险事件</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-3xl font-semibold text-slate-900">{data.kpis.risk}</p>
+                <p className="text-3xl font-semibold text-foreground">{data.kpis.risk}</p>
               </CardContent>
             </Card>
           </section>
@@ -129,13 +141,13 @@ export default function HomePage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 {data.key_assets.map((asset) => (
-                  <div key={asset.id} className="flex items-center justify-between rounded-md border border-slate-100 p-3">
+                  <div key={asset.id} className="flex items-center justify-between rounded-md border border-border bg-background/20 p-3">
                     <div>
-                      <p className="text-sm font-semibold text-slate-900">{asset.name}</p>
-                      <p className="text-xs text-slate-500">{asset.id}</p>
+                      <p className="text-sm font-semibold text-foreground">{asset.name}</p>
+                      <p className="text-xs text-muted-foreground">{asset.id}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-semibold text-slate-900">{formatAssetValue(asset.value)}</p>
+                      <p className="text-sm font-semibold text-foreground">{formatAssetValue(asset.value)}</p>
                       <p className={asset.changePct >= 0 ? 'text-xs text-emerald-600' : 'text-xs text-rose-600'}>
                         {pctFormatter.format(asset.changePct)}%
                       </p>
@@ -167,16 +179,16 @@ export default function HomePage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {lane.events.length === 0 ? (
-                    <p className="text-sm text-slate-500">暂无事件</p>
+                    <p className="text-sm text-muted-foreground">暂无事件</p>
                   ) : (
                     lane.events.map((event) => (
-                      <div key={event.event_id} className="rounded-md border border-slate-100 p-3">
+                      <div key={event.event_id} className="rounded-md border border-border bg-background/20 p-3">
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge variant="secondary">{event.event_type}</Badge>
                           <Badge variant={event.stance === 'positive' ? 'default' : 'secondary'}>{event.stance}</Badge>
                         </div>
-                        <p className="mt-2 text-sm font-semibold text-slate-900">{event.headline}</p>
-                        <p className="mt-1 text-xs text-slate-500">{formatApiDateTime(event.event_time)}</p>
+                        <p className="mt-2 text-sm font-semibold text-foreground">{event.headline}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{formatApiDateTime(event.event_time)}</p>
                       </div>
                     ))
                   )}

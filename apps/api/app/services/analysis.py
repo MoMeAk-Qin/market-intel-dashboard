@@ -10,7 +10,15 @@ import re
 from openai import OpenAI
 
 from ..config import AppConfig
-from ..models import AnalysisRequest, AnalysisResponse, AnalysisUsage, EventEvidence
+from ..models import (
+    AnalysisRequest,
+    AnalysisResponse,
+    AnalysisUsage,
+    EarningsCard,
+    EventEvidence,
+    ResearchAnalysisBlock,
+    ResearchNewsItem,
+)
 from .vector_store import BaseVectorStore, EmbeddingsUnavailable, VectorStoreDisabled
 
 _REQUIRED_SECTIONS: tuple[str, ...] = ("【结论】", "【影响】", "【风险】", "【关注点】")
@@ -31,13 +39,15 @@ def analyze_financial_sources(
     payload: AnalysisRequest,
     config: AppConfig,
     vector_store: BaseVectorStore | None = None,
+    model_name: str | None = None,
 ) -> AnalysisResponse:
     if not payload.question.strip():
         raise ValueError("question is required")
     if not config.dashscope_api_key:
         raise ValueError("DASHSCOPE_API_KEY is required for Qwen analysis")
+    selected_model = resolve_analysis_model(config, model_name)
     cache_ttl = max(config.analysis_cache_ttl_seconds, 0)
-    cache_key = _build_cache_key(payload, config)
+    cache_key = _build_cache_key(payload, config, selected_model=selected_model)
     if cache_ttl > 0:
         cached = _get_cached_response(cache_key)
         if cached is not None:
@@ -54,10 +64,7 @@ def analyze_financial_sources(
         except Exception:
             retrieved = []
 
-    client = OpenAI(
-        api_key=config.dashscope_api_key,
-        base_url=config.qwen_base_url,
-    )
+    client = get_client(config, selected_model)
 
     system_parts = [
         "你是金融信源分析助手。",
@@ -95,7 +102,7 @@ def analyze_financial_sources(
         user_parts.append("Context:\n" + payload.context.strip())
 
     response = client.chat.completions.create(
-        model=config.qwen_model,
+        model=selected_model,
         messages=[
             {"role": "system", "content": "\n".join(system_parts)},
             {"role": "user", "content": "\n\n".join(user_parts)},
@@ -123,7 +130,7 @@ def analyze_financial_sources(
         )
     result = AnalysisResponse(
         answer=final_answer,
-        model=config.qwen_model,
+        model=selected_model,
         usage=parsed_usage,
         sources=retrieved,
     )
@@ -132,14 +139,72 @@ def analyze_financial_sources(
     return result
 
 
-def _build_cache_key(payload: AnalysisRequest, config: AppConfig) -> str:
+def analyze_research_company(
+    *,
+    ticker: str,
+    news: list[ResearchNewsItem],
+    earnings_card: EarningsCard | None,
+    config: AppConfig,
+    vector_store: BaseVectorStore | None = None,
+    model_name: str | None = None,
+) -> ResearchAnalysisBlock:
+    fallback_sources = _research_news_to_evidence(news)
+    if not config.dashscope_api_key:
+        return _build_research_fallback(
+            ticker=ticker,
+            news=news,
+            earnings_card=earnings_card,
+            sources=fallback_sources,
+        )
+
+    context = _build_research_context(ticker=ticker, news=news, earnings_card=earnings_card)
+    payload = AnalysisRequest(
+        question=f"请基于给定财报与新闻，输出 {ticker} 的研究结论、风险与关注点。",
+        context=context,
+        sources=[f"{item.title} | {item.source_url}" for item in fallback_sources],
+        use_retrieval=True,
+        top_k=config.analysis_top_k,
+    )
+    try:
+        response = analyze_financial_sources(
+            payload,
+            config,
+            vector_store,
+            model_name=model_name,
+        )
+    except Exception:
+        return _build_research_fallback(
+            ticker=ticker,
+            news=news,
+            earnings_card=earnings_card,
+            sources=fallback_sources,
+        )
+
+    answer = response.answer.strip()
+    if not answer:
+        return _build_research_fallback(
+            ticker=ticker,
+            news=news,
+            earnings_card=earnings_card,
+            sources=fallback_sources,
+        )
+
+    return ResearchAnalysisBlock(
+        answer=answer,
+        model=response.model,
+        is_fallback=False,
+        sources=response.sources or fallback_sources,
+    )
+
+
+def _build_cache_key(payload: AnalysisRequest, config: AppConfig, *, selected_model: str) -> str:
     key_data = {
         "question": payload.question.strip(),
         "context": (payload.context or "").strip(),
         "sources": payload.sources,
         "use_retrieval": payload.use_retrieval,
         "top_k": payload.top_k,
-        "model": config.qwen_model,
+        "model": selected_model,
         "temperature": config.qwen_temperature,
         "max_tokens": config.qwen_max_tokens,
     }
@@ -236,3 +301,104 @@ def _render_refs(source_count: int) -> str:
         return ""
     count = min(source_count, 3)
     return "".join(f"[{idx}]" for idx in range(1, count + 1))
+
+
+def _build_research_context(
+    *,
+    ticker: str,
+    news: list[ResearchNewsItem],
+    earnings_card: EarningsCard | None,
+) -> str:
+    lines = [f"Ticker: {ticker}"]
+    if earnings_card is not None:
+        lines.extend(
+            [
+                f"EPS: {earnings_card.eps.value} (YoY: {earnings_card.eps.yoy})",
+                f"Revenue(B): {earnings_card.revenue.value} (YoY: {earnings_card.revenue.yoy})",
+                f"Guidance: {earnings_card.guidance}",
+                f"Sentiment: {earnings_card.sentiment}",
+            ]
+        )
+    else:
+        lines.append("Earnings: unavailable")
+
+    if news:
+        lines.append("Recent News:")
+        for item in news[:5]:
+            lines.append(
+                f"- {item.event_time.isoformat()} | {item.publisher} | {item.headline} | {item.summary}"
+            )
+    else:
+        lines.append("Recent News: unavailable")
+
+    return "\n".join(lines)
+
+
+def _research_news_to_evidence(news: list[ResearchNewsItem]) -> list[EventEvidence]:
+    evidence: list[EventEvidence] = []
+    for idx, item in enumerate(news):
+        quote_id = item.quote_id or f"research-news-{idx + 1}"
+        evidence.append(
+            EventEvidence(
+                quote_id=quote_id,
+                source_url=item.source_url,
+                title=item.headline,
+                published_at=item.event_time,
+                excerpt=item.summary,
+            )
+        )
+    return evidence
+
+
+def _build_research_fallback(
+    *,
+    ticker: str,
+    news: list[ResearchNewsItem],
+    earnings_card: EarningsCard | None,
+    sources: list[EventEvidence],
+) -> ResearchAnalysisBlock:
+    if not news and earnings_card is None:
+        answer = (
+            f"【结论】当前缺少 {ticker} 的有效财报与新闻数据。\n"
+            "【影响】暂无法形成高置信度研究判断。\n"
+            "【风险】信息缺失可能导致偏差。\n"
+            "【关注点】建议等待后续公告或补充可靠来源。"
+        )
+    elif earnings_card is None:
+        answer = (
+            f"【结论】{ticker} 财报数据暂不可用，结论基于新闻聚合。\n"
+            "【影响】短期波动主要由事件情绪驱动。\n"
+            "【风险】缺少财务锚点，判断稳定性有限。\n"
+            "【关注点】继续跟踪财报发布与价格反馈。"
+        )
+    else:
+        answer = (
+            f"【结论】{ticker} 研究结果采用规则降级生成。\n"
+            "【影响】财报与新闻显示短期基本面仍需持续跟踪。\n"
+            "【风险】模型分析链路不可用，结论可能不完整。\n"
+            "【关注点】恢复分析链路后建议复核一次。"
+        )
+    return ResearchAnalysisBlock(
+        answer=answer,
+        model="rule-based",
+        is_fallback=True,
+        sources=sources,
+    )
+
+
+def resolve_analysis_model(config: AppConfig, model_name: str | None = None) -> str:
+    if model_name and model_name.strip() and model_name.strip() in config.analysis_models:
+        return model_name.strip()
+    if config.default_analysis_model in config.analysis_models:
+        return config.default_analysis_model
+    if config.analysis_models:
+        return config.analysis_models[0]
+    return config.qwen_model
+
+
+def get_client(config: AppConfig, model_name: str | None = None) -> OpenAI:
+    _ = resolve_analysis_model(config, model_name)
+    return OpenAI(
+        api_key=config.dashscope_api_key,
+        base_url=config.qwen_base_url,
+    )

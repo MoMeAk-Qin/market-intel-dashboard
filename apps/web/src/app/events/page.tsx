@@ -1,6 +1,9 @@
 'use client';
 
-import { Suspense, useMemo, useState } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiGet } from '@/lib/api';
@@ -16,6 +19,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -38,6 +42,51 @@ const stanceOptions = ['positive', 'neutral', 'negative'];
 const originOptions = ['all', 'live', 'seed'] as const;
 
 const formatTime = (value: string) => formatApiDateTime(value);
+
+const eventsFilterSchema = z.object({
+  q: z.string().default(''),
+  market: z.string().default(''),
+  sector: z.string().default(''),
+  type: z.string().default(''),
+  origin: z.enum(['all', 'live', 'seed']).default('all'),
+  stance: z.string().default(''),
+  minImpact: z
+    .string()
+    .default('')
+    .refine((value) => {
+      if (!value.trim()) {
+        return true;
+      }
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100;
+    }, 'Min impact 必须在 0 到 100 之间'),
+  minConfidence: z
+    .string()
+    .default('')
+    .refine((value) => {
+      if (!value.trim()) {
+        return true;
+      }
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1;
+    }, 'Min confidence 必须在 0 到 1 之间'),
+});
+
+type EventsFilterValues = z.input<typeof eventsFilterSchema>;
+
+const defaultFilterValues: EventsFilterValues = {
+  q: '',
+  market: '',
+  sector: '',
+  type: '',
+  origin: 'all',
+  stance: '',
+  minImpact: '',
+  minConfidence: '',
+};
+
+const normalizeOriginValue = (value?: string): EventsFilterValues['origin'] =>
+  value === 'live' || value === 'seed' || value === 'all' ? value : 'all';
 
 function EventsPageContent() {
   const router = useRouter();
@@ -63,6 +112,38 @@ function EventsPageContent() {
     };
   }, [searchParams]);
 
+  const initialFilterValues = useMemo<EventsFilterValues>(
+    () => ({
+      q: queryParams.q ?? '',
+      market: queryParams.market ?? '',
+      sector: queryParams.sector ?? '',
+      type: queryParams.type ?? '',
+      origin: normalizeOriginValue(queryParams.origin),
+      stance: queryParams.stance ?? '',
+      minImpact: queryParams.minImpact ?? '',
+      minConfidence: queryParams.minConfidence ?? '',
+    }),
+    [
+      queryParams.minConfidence,
+      queryParams.minImpact,
+      queryParams.market,
+      queryParams.origin,
+      queryParams.q,
+      queryParams.sector,
+      queryParams.stance,
+      queryParams.type,
+    ],
+  );
+
+  const filterForm = useForm<EventsFilterValues>({
+    resolver: zodResolver(eventsFilterSchema),
+    defaultValues: initialFilterValues,
+  });
+
+  useEffect(() => {
+    filterForm.reset(initialFilterValues);
+  }, [filterForm, initialFilterValues]);
+
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['events', queryParams],
     queryFn: () => apiGet<PaginatedEvents>('/events', queryParams),
@@ -81,8 +162,8 @@ function EventsPageContent() {
         header: 'Event',
         cell: ({ row }) => (
           <div className="space-y-1">
-            <p className="text-sm font-semibold text-slate-900">{row.original.headline}</p>
-            <p className="text-xs text-slate-500">{row.original.publisher}</p>
+            <p className="text-sm font-semibold text-foreground">{row.original.headline}</p>
+            <p className="text-xs text-muted-foreground">{row.original.publisher}</p>
           </div>
         ),
       },
@@ -102,7 +183,7 @@ function EventsPageContent() {
       {
         accessorKey: 'event_type',
         header: 'Type',
-        cell: ({ row }) => <span className="text-xs uppercase text-slate-600">{row.original.event_type}</span>,
+        cell: ({ row }) => <span className="text-xs uppercase text-muted-foreground">{row.original.event_type}</span>,
       },
       {
         accessorKey: 'data_origin',
@@ -130,7 +211,7 @@ function EventsPageContent() {
       {
         accessorKey: 'event_time',
         header: 'Time',
-        cell: ({ row }) => <span className="text-xs text-slate-500">{formatTime(row.original.event_time)}</span>,
+        cell: ({ row }) => <span className="text-xs text-muted-foreground">{formatTime(row.original.event_time)}</span>,
       },
     ],
     [],
@@ -159,28 +240,25 @@ function EventsPageContent() {
     router.push(`/events?${nextParams.toString()}`);
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const formData = new FormData(form);
+  const handleSubmit = filterForm.handleSubmit((values) => {
     updateParams({
-      q: (formData.get('q') as string) || undefined,
-      market: (formData.get('market') as string) || undefined,
-      sector: (formData.get('sector') as string) || undefined,
-      type: (formData.get('type') as string) || undefined,
-      origin: (formData.get('origin') as string) || undefined,
-      stance: (formData.get('stance') as string) || undefined,
-      minImpact: (formData.get('minImpact') as string) || undefined,
-      minConfidence: (formData.get('minConfidence') as string) || undefined,
+      q: values.q?.trim() || undefined,
+      market: values.market || undefined,
+      sector: values.sector || undefined,
+      type: values.type || undefined,
+      origin: values.origin === 'all' ? undefined : values.origin,
+      stance: values.stance || undefined,
+      minImpact: values.minImpact?.trim() || undefined,
+      minConfidence: values.minConfidence?.trim() || undefined,
       page: '1',
     });
-  };
+  });
 
   return (
     <div className="space-y-6">
       <div className="fade-up space-y-2">
         <h1 className="text-3xl font-semibold">Event Hub</h1>
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-muted-foreground">
           Filter, rank, and deep dive into cross-asset catalysts with evidence-backed context.
         </p>
       </div>
@@ -190,85 +268,176 @@ function EventsPageContent() {
           <CardTitle className="text-base">Filters</CardTitle>
         </CardHeader>
         <CardContent>
-          <form className="grid gap-4 md:grid-cols-3" onSubmit={handleSubmit}>
-            <Input name="q" placeholder="Search headline, ticker, or keyword" defaultValue={queryParams.q} />
-            <Select name="market" defaultValue={queryParams.market ?? ''}>
-              <SelectTrigger>
-                <SelectValue placeholder="Market" />
-              </SelectTrigger>
-              <SelectContent>
-                {marketOptions.map((market) => (
-                  <SelectItem key={market} value={market}>
-                    {market}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select name="sector" defaultValue={queryParams.sector ?? ''}>
-              <SelectTrigger>
-                <SelectValue placeholder="Sector" />
-              </SelectTrigger>
-              <SelectContent>
-                {sectorOptions.map((sector) => (
-                  <SelectItem key={sector} value={sector}>
-                    {sector}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select name="type" defaultValue={queryParams.type ?? ''}>
-              <SelectTrigger>
-                <SelectValue placeholder="Event type" />
-              </SelectTrigger>
-              <SelectContent>
-                {typeOptions.map((type) => (
-                  <SelectItem key={type} value={type}>
-                    {type}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select name="stance" defaultValue={queryParams.stance ?? ''}>
-              <SelectTrigger>
-                <SelectValue placeholder="Stance" />
-              </SelectTrigger>
-              <SelectContent>
-                {stanceOptions.map((stance) => (
-                  <SelectItem key={stance} value={stance}>
-                    {stance}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select name="origin" defaultValue={queryParams.origin ?? ''}>
-              <SelectTrigger>
-                <SelectValue placeholder="Origin" />
-              </SelectTrigger>
-              <SelectContent>
-                {originOptions.map((origin) => (
-                  <SelectItem key={origin} value={origin}>
-                    {origin}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input name="minImpact" type="number" min="0" max="100" placeholder="Min impact" defaultValue={queryParams.minImpact} />
-            <Input
-              name="minConfidence"
-              type="number"
-              min="0"
-              max="1"
-              step="0.01"
-              placeholder="Min confidence"
-              defaultValue={queryParams.minConfidence}
-            />
-            <div className="flex items-center gap-2">
-              <Button type="submit">Apply</Button>
-              <Button type="button" variant="outline" onClick={() => router.push('/events')}>
-                Reset
-              </Button>
-            </div>
-          </form>
+          <Form {...filterForm}>
+            <form className="grid gap-4 md:grid-cols-3" onSubmit={handleSubmit}>
+              <FormField
+                control={filterForm.control}
+                name="q"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>关键词</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Search headline, ticker, or keyword" {...field} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={filterForm.control}
+                name="market"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Market</FormLabel>
+                    <Select value={field.value || undefined} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Market" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {marketOptions.map((market) => (
+                          <SelectItem key={market} value={market}>
+                            {market}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={filterForm.control}
+                name="sector"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Sector</FormLabel>
+                    <Select value={field.value || undefined} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sector" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {sectorOptions.map((sector) => (
+                          <SelectItem key={sector} value={sector}>
+                            {sector}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={filterForm.control}
+                name="type"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Event type</FormLabel>
+                    <Select value={field.value || undefined} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Event type" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {typeOptions.map((type) => (
+                          <SelectItem key={type} value={type}>
+                            {type}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={filterForm.control}
+                name="stance"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Stance</FormLabel>
+                    <Select value={field.value || undefined} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Stance" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {stanceOptions.map((stance) => (
+                          <SelectItem key={stance} value={stance}>
+                            {stance}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={filterForm.control}
+                name="origin"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Origin</FormLabel>
+                    <Select value={field.value || undefined} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Origin" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {originOptions.map((origin) => (
+                          <SelectItem key={origin} value={origin}>
+                            {origin}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={filterForm.control}
+                name="minImpact"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Min impact</FormLabel>
+                    <FormControl>
+                      <Input type="number" min="0" max="100" placeholder="0 - 100" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={filterForm.control}
+                name="minConfidence"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Min confidence</FormLabel>
+                    <FormControl>
+                      <Input type="number" min="0" max="1" step="0.01" placeholder="0 - 1" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="flex items-center gap-2 pt-7">
+                <Button type="submit">Apply</Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    filterForm.reset(defaultFilterValues);
+                    router.push('/events');
+                  }}
+                >
+                  Reset
+                </Button>
+              </div>
+            </form>
+          </Form>
         </CardContent>
       </Card>
 
@@ -285,11 +454,11 @@ function EventsPageContent() {
             </div>
           ) : isError || !data ? (
             <div className="space-y-3">
-              <p className="text-sm text-slate-600">Unable to load events.</p>
+              <p className="text-sm text-muted-foreground">Unable to load events.</p>
               <Button onClick={() => refetch()}>Retry</Button>
             </div>
           ) : data.items.length === 0 ? (
-            <p className="text-sm text-slate-600">No events match your filters.</p>
+            <p className="text-sm text-muted-foreground">No events match your filters.</p>
           ) : (
             <Table>
               <TableHeader>
@@ -320,7 +489,7 @@ function EventsPageContent() {
           )}
 
           {data ? (
-            <div className="mt-4 flex items-center justify-between text-sm text-slate-500">
+            <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
               <span>
                 Page {data.page} of {totalPages}
               </span>
@@ -360,41 +529,41 @@ function EventsPageContent() {
           ) : detailData ? (
             <div className="space-y-6 text-sm">
               <div>
-                <p className="text-lg font-semibold text-slate-900">{detailData.headline}</p>
-                <p className="text-xs text-slate-500">{detailData.publisher}</p>
+                <p className="text-lg font-semibold text-foreground">{detailData.headline}</p>
+                <p className="text-xs text-muted-foreground">{detailData.publisher}</p>
               </div>
-              <p className="text-slate-700">{detailData.summary}</p>
+              <p className="text-foreground/90">{detailData.summary}</p>
               <div className="grid gap-3">
                 <div>
-                  <p className="text-xs uppercase text-slate-500">Impact Chain</p>
-                  <ul className="mt-2 list-disc space-y-1 pl-4 text-slate-700">
+                  <p className="text-xs uppercase text-muted-foreground">Impact Chain</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-4 text-foreground/90">
                     {detailData.impact_chain.map((item) => (
                       <li key={item}>{item}</li>
                     ))}
                   </ul>
                 </div>
                 <div>
-                  <p className="text-xs uppercase text-slate-500">Key Numbers</p>
+                  <p className="text-xs uppercase text-muted-foreground">Key Numbers</p>
                   <div className="mt-2 grid gap-2 md:grid-cols-2">
                     {detailData.numbers.map((number) => (
-                      <div key={number.name} className="rounded-md border border-slate-100 p-3">
-                        <p className="text-xs text-slate-500">{number.name}</p>
+                      <div key={number.name} className="rounded-md border border-border bg-background/20 p-3">
+                        <p className="text-xs text-muted-foreground">{number.name}</p>
                         <p className="text-base font-semibold">
                           {number.value} {number.unit ?? ''}
                         </p>
-                        <p className="text-xs text-slate-500">{number.period ?? ''}</p>
+                        <p className="text-xs text-muted-foreground">{number.period ?? ''}</p>
                       </div>
                     ))}
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs uppercase text-slate-500">Evidence</p>
+                  <p className="text-xs uppercase text-muted-foreground">Evidence</p>
                   <div className="mt-2 space-y-2">
                     {detailData.evidence.map((item) => (
-                      <div key={item.quote_id} className="rounded-md border border-slate-100 p-3">
-                        <p className="text-sm font-semibold text-slate-900">{item.title}</p>
-                        <p className="text-xs text-slate-500">{item.source_url}</p>
-                        <p className="text-xs text-slate-600">{item.excerpt}</p>
+                      <div key={item.quote_id} className="rounded-md border border-border bg-background/20 p-3">
+                        <p className="text-sm font-semibold text-foreground">{item.title}</p>
+                        <p className="text-xs text-muted-foreground">{item.source_url}</p>
+                        <p className="text-xs text-muted-foreground">{item.excerpt}</p>
                       </div>
                     ))}
                   </div>
@@ -402,7 +571,7 @@ function EventsPageContent() {
               </div>
             </div>
           ) : (
-            <p className="text-sm text-slate-500">Select an event to view details.</p>
+            <p className="text-sm text-muted-foreground">Select an event to view details.</p>
           )}
         </DrawerContent>
       </Drawer>
@@ -415,7 +584,7 @@ function EventsPageFallback() {
     <div className="space-y-6">
       <div className="space-y-2">
         <h1 className="text-3xl font-semibold">Event Hub</h1>
-        <p className="text-sm text-slate-600">Loading event filters and feed...</p>
+        <p className="text-sm text-muted-foreground">Loading event filters and feed...</p>
       </div>
       <Card>
         <CardHeader>

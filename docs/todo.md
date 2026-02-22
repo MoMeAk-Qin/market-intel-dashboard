@@ -1,6 +1,6 @@
 # TODO 清单（唯一开发计划入口，v2.2）
 
-> 更新日期：2026-02-14
+> 更新日期：2026-02-22
 > 说明：后续开发计划、阶段状态、验收结果仅维护在本文件。
 > 重要：执行任何任务时，必须同步参看 `docs/master-plan-v2.md`、`docs/implementation-roadmap-v2.md`、`docs/feasibility-assessment.md`。
 
@@ -65,20 +65,16 @@
 - [x] 阶段5：能力扩展（真实行情 + 统一模型 + E2E + 可选 pgvector）
 - [x] 阶段99：静态类型告警收口（并行低优先）
 - [x] 阶段6：Postgres + pgvector 索引优化与运维脚本
-- [ ] 阶段7：Research 页面真实数据链路
-- [ ] 阶段8：未上市公司情报引擎
-- [ ] 阶段9：科技热度 + 关联分析 + 因果链路
-- [ ] 阶段10：多模型切换 + 定时报告
+- [x] 阶段7：Research 页面真实数据链路
+- [x] 阶段8：未上市公司情报引擎
+- [x] 阶段9：科技热度 + 关联分析 + 因果链路
+- [x] 阶段10：多模型切换 + 定时报告
 
 ---
 
 ## 2. 下一步执行顺序（从现在开始）
 
-1. 阶段6：Postgres + pgvector
-2. 阶段7：Research 真实化
-3. 阶段8：未上市公司情报
-4. 阶段9：热度与关联分析
-5. 阶段10：多模型与定时报告
+1. v2.2 阶段已全部完成，等待新增阶段任务（建议从 v2.3 规划开始）
 
 ---
 
@@ -130,18 +126,29 @@
 
 ### 5.1 任务清单（P7-S1）
 
-- [ ] `P7-S1-A` 新建 `apps/api/app/sources/earnings.py`（财报获取 + 强类型模型）
-- [ ] `P7-S1-B` 修改 `apps/api/app/api.py`，重构 `GET /research/company/{id}` 返回结构
-- [ ] `P7-S1-C` 修改 `apps/api/app/services/analysis.py`，统一检索+分析链路并附引用
-- [ ] `P7-S1-D` 修改 `apps/web/src/app/research/page.tsx`，去除演示态文案并展示来源/时间
-- [ ] `P7-S1-E` 修改 `apps/web/src/lib/api.ts`，补齐 Research 类型定义
-- [ ] `P7-S1-F` 新建 `apps/api/tests/test_research_api.py`（正常/缺失/回退路径）
+- [x] `P7-S1-A` 新建 `apps/api/app/sources/earnings.py`（财报获取 + 强类型模型）（结果：接入 Yahoo quoteSummary，失败返回 `None` 并记录日志）
+- [x] `P7-S1-B` 修改 `apps/api/app/api.py`，重构 `GET /research/company/{id}` 返回结构（结果：升级为 `quote+earnings+news+analysis` 链路并输出 `source_type/updated_at/company_type`）
+- [x] `P7-S1-C` 修改 `apps/api/app/services/analysis.py`，统一检索+分析链路并附引用（结果：新增 `analyze_research_company` 与规则降级）
+- [x] `P7-S1-D` 修改 `apps/web/src/app/research/page.tsx`，去除演示态文案并展示来源/时间（结果：Tabs 改为 `Earnings/News/Analysis`，展示来源与更新时间）
+- [x] `P7-S1-E` 修改 `apps/web/src/lib/api.ts`，补齐 Research 类型定义（结果：新增 `getResearchCompany`，共享类型已同步）
+- [x] `P7-S1-F` 新建 `apps/api/tests/test_research_api.py`（正常/缺失/回退路径）（结果：覆盖 live/fallback/unlisted/结构回归场景）
 
 ### 5.2 验收
 
-- [ ] 不再出现硬编码固定回答路径
-- [ ] 页面可见 `source_type` 与 `updated_at`
-- [ ] 回退场景文案准确且可用
+- [x] 不再出现硬编码固定回答路径（验证：`/research/company/{ticker}` 删除旧 `reports/fact_check` 演示模板）
+- [x] 页面可见 `source_type` 与 `updated_at`（验证：`apps/web/src/app/research/page.tsx` 顶部展示来源与更新时间）
+- [x] 回退场景文案准确且可用（验证：分析链路失败/财报缺失均返回 `source_type=fallback` 且有说明）
+
+阶段7验收命令记录（2026-02-22）：
+1. `uv run --project apps/api pytest -q apps/api/tests/test_research_api.py apps/api/tests/test_analysis_service.py apps/api/tests/test_qa_endpoint.py`：通过（`13 passed`）。
+2. `pnpm -C apps/web test:contract`：通过（`8 passed`）。
+3. `pnpm lint --max-warnings=0`：通过（`pnpm lint -- --max-warnings=0` 在当前脚本参数透传下会报 pattern 错误，已用等价命令验证）。
+4. `uvx pyright --pythonpath apps/api/.venv/bin/python apps/api/app apps/api/tests --outputjson > /tmp/pyright-stage7.json || true`：执行完成（含存量告警输出文件）。
+5. `uv run --project apps/api python tools/typecheck/check_pyright_baseline.py --input /tmp/pyright-stage7.json --baseline tools/typecheck/pyright-baseline.json --repo-root .`：通过（`new=0`，未引入新增告警）。
+
+阶段7回退策略说明：
+- 财报抓取失败或分析链路失败时，接口保持 `200` 并返回完整结构；
+- `source_type` 标记为 `fallback`，前端显示来源与说明文案（非演示态）。
 
 ---
 
@@ -149,21 +156,29 @@
 
 ### 6.1 任务清单（P8-S1）
 
-- [ ] `P8-S1-A` 修改 `apps/api/app/models.py` 新增未上市公司模型
-- [ ] `P8-S1-B` 新建 `apps/api/app/services/unlisted_tracker.py`（画像/事件/时间线）
-- [ ] `P8-S1-C` 修改 `apps/api/app/services/ingestion.py` 接入 `sync_from_events`
-- [ ] `P8-S1-D` 修改 `apps/api/app/api.py` 增加 `/unlisted/companies` 系列端点
-- [ ] `P8-S1-E` 新建 `apps/api/tests/test_unlisted_tracker.py`
-- [ ] `P8-S1-F` 修改 `apps/web/src/app/research/page.tsx` 支持未上市公司展示
-- [ ] `P8-S1-G` API 与前端显式区分 `source_type=seed/live`
-- [ ] `P8-S1-H` 落地“修订后 14 家未上市种子列表”（见 6.3 执行基线）
-- [ ] `P8-S1-I` 增加 `MiniMax` 预留关注条目（未上市，待后续上市后转入上市资产池）
+- [x] `P8-S1-A` 修改 `apps/api/app/models.py` 新增未上市公司模型（结果：新增 `UnlistedCompany/UnlistedEvent/UnlistedCompanyResponse` 与 `source_type=seed|live`）
+- [x] `P8-S1-B` 新建 `apps/api/app/services/unlisted_tracker.py`（画像/事件/时间线）（结果：实现种子加载、别名匹配、事件同步、列表/详情查询）
+- [x] `P8-S1-C` 修改 `apps/api/app/services/ingestion.py` 接入 `sync_from_events`（结果：每轮刷新后自动同步未上市时间线）
+- [x] `P8-S1-D` 修改 `apps/api/app/api.py` 增加 `/unlisted/companies` 系列端点（结果：新增列表与详情查询端点）
+- [x] `P8-S1-E` 新建 `apps/api/tests/test_unlisted_tracker.py`（结果：覆盖种子基线、live 同步、端点返回与 404）
+- [x] `P8-S1-F` 修改 `apps/web/src/app/research/page.tsx` 支持未上市公司展示（结果：Research 页新增未上市画像、时间线与来源标签）
+- [x] `P8-S1-G` API 与前端显式区分 `source_type=seed/live`（结果：后端响应与前端 Badge 均展示 `seed/live`）
+- [x] `P8-S1-H` 落地“修订后 14 家未上市种子列表”（见 6.3 执行基线）（结果：已在 `unlisted_tracker` 内置落地）
+- [x] `P8-S1-I` 增加 `MiniMax` 预留关注条目（未上市，待后续上市后转入上市资产池）（结果：已作为 `minimax` 种子条目纳入）
 
 ### 6.2 验收
 
-- [ ] 至少 14 家未上市公司可查询
-- [ ] 关键事件可追溯来源
-- [ ] Seed/实时数据无混淆
+- [x] 至少 14 家未上市公司可查询（当前内置 15 家：14 家基线 + `MiniMax`）
+- [x] 关键事件可追溯来源（未上市时间线保留 `source_url` 与 `quote_id`）
+- [x] Seed/实时数据无混淆（API 与前端均显式展示 `source_type=seed/live`）
+
+阶段8验收命令记录（2026-02-22）：
+1. `uv run --project apps/api pytest -q apps/api/tests/test_unlisted_tracker.py apps/api/tests/test_research_api.py apps/api/tests/test_ingestion_origin.py`：通过（`11 passed`）。
+2. `uv run --project apps/api pytest -q apps/api/tests/test_analysis_service.py apps/api/tests/test_qa_endpoint.py`：通过（`9 passed`）。
+3. `pnpm -C apps/web test:contract`：通过（`8 passed`）。
+4. `pnpm lint -- --max-warnings=0`：在当前脚本参数透传下会报 pattern 错误，已用等价命令 `pnpm lint --max-warnings=0` 验证通过。
+5. `uvx pyright --pythonpath apps/api/.venv/bin/python apps/api/app apps/api/tests --outputjson > /tmp/pyright-stage8.json || true`：执行完成。
+6. `uv run --project apps/api python tools/typecheck/check_pyright_baseline.py --input /tmp/pyright-stage8.json --baseline tools/typecheck/pyright-baseline.json --repo-root .`：通过（`new=0`，未引入新增告警）。
 
 ### 6.3 执行基线（修订后未上市种子）
 
@@ -190,22 +205,29 @@
 
 ### 7.1 任务清单（P9-S1）
 
-- [ ] `P9-S1-A` 新建 `apps/api/app/services/tech_heatmap.py`
-- [ ] `P9-S1-B` 新建 `apps/api/app/services/correlation_engine.py`
-- [ ] `P9-S1-C` 新建 `apps/api/app/services/causal_analyzer.py`
-- [ ] `P9-S1-D` 修改 `apps/api/app/config.py`（预设组合与阈值）
-- [ ] `P9-S1-E` 修改 `apps/api/app/api.py` 增加 `/tech/*`、`/correlation/*`
-- [ ] `P9-S1-F` 新建 `apps/web/src/components/CorrelationMatrix.tsx`
-- [ ] `P9-S1-G` 新建 `apps/web/src/app/correlation/page.tsx`
-- [ ] `P9-S1-H` 新建 `apps/api/tests/test_correlation.py`
-- [ ] `P9-S1-I` 实现前端“方案 A/B/C”页签切换（与后端预设一一对应）
-- [ ] `P9-S1-J` 扩展科技关注资产池（美股 12 + 港股 8，见 7.3 执行基线）
+- [x] `P9-S1-A` 新建 `apps/api/app/services/tech_heatmap.py`（结果：实现价格异动+新闻热度综合评分与等级输出）
+- [x] `P9-S1-B` 新建 `apps/api/app/services/correlation_engine.py`（结果：实现 7/30/90 天相关矩阵与 `US02Y` 回退说明）
+- [x] `P9-S1-C` 新建 `apps/api/app/services/causal_analyzer.py`（结果：实现事件起点选择与分层因果链结构化输出）
+- [x] `P9-S1-D` 修改 `apps/api/app/config.py`（预设组合与阈值）（结果：落地 A/B/C 预设、科技关注池与热度阈值配置）
+- [x] `P9-S1-E` 修改 `apps/api/app/api.py` 增加 `/tech/*`、`/correlation/*`（结果：新增 `GET /tech/heatmap`、`GET /correlation/matrix`、`POST /correlation/analyze`）
+- [x] `P9-S1-F` 新建 `apps/web/src/components/CorrelationMatrix.tsx`（结果：提供可视化矩阵表格与色阶）
+- [x] `P9-S1-G` 新建 `apps/web/src/app/correlation/page.tsx`（结果：新增关联分析页面，集成矩阵/热度/因果链）
+- [x] `P9-S1-H` 新建 `apps/api/tests/test_correlation.py`（结果：覆盖预设矩阵、US02Y 回退、热度排序、因果链结构）
+- [x] `P9-S1-I` 实现前端“方案 A/B/C”页签切换（与后端预设一一对应）（结果：前端支持页签与窗口切换联动请求）
+- [x] `P9-S1-J` 扩展科技关注资产池（美股 12 + 港股 8，见 7.3 执行基线）（结果：配置默认值已与基线一致，并纳入 `MiniMax` 未上市池）
 
 ### 7.2 验收
 
-- [ ] 3 套预设矩阵可返回
-- [ ] 因果链路结构化输出
-- [ ] 前端可切换预设与窗口
+- [x] 3 套预设矩阵可返回（验证：`/correlation/matrix?preset=A|B|C` 均返回矩阵）
+- [x] 因果链路结构化输出（验证：`/correlation/analyze` 返回 `nodes` 分层结构与证据）
+- [x] 前端可切换预设与窗口（验证：`/correlation` 页面支持 A/B/C + 7/30/90 切换）
+
+阶段9验收命令记录（2026-02-22）：
+1. `uv run --project apps/api pytest -q apps/api/tests/test_correlation.py apps/api/tests/test_unlisted_tracker.py apps/api/tests/test_research_api.py apps/api/tests/test_analysis_service.py apps/api/tests/test_qa_endpoint.py`：通过（`21 passed`）。
+2. `pnpm -C apps/web test:contract`：通过（`10 passed`，新增 correlation 合同测试）。
+3. `pnpm lint --max-warnings=0`：通过。
+4. `uvx pyright --pythonpath apps/api/.venv/bin/python apps/api/app apps/api/tests --outputjson > /tmp/pyright-stage9.json || true`：执行完成。
+5. `uv run --project apps/api python tools/typecheck/check_pyright_baseline.py --input /tmp/pyright-stage9.json --baseline tools/typecheck/pyright-baseline.json --repo-root .`：通过（`new=0`，未引入新增告警）。
 
 ### 7.3 执行基线（资产组合与关注池）
 
@@ -233,18 +255,25 @@
 
 ### 8.1 任务清单（P10-S1）
 
-- [ ] `P10-S1-A` 修改 `apps/api/app/config.py` 增加模型注册配置
-- [ ] `P10-S1-B` 修改 `apps/api/app/services/analysis.py` 支持按模型路由
-- [ ] `P10-S1-C` 新建 `apps/api/app/services/scheduled_tasks.py`
-- [ ] `P10-S1-D` 修改 `apps/api/app/api.py` 增加模型查询/切换端点
-- [ ] `P10-S1-E` 新建 `apps/web/src/components/ModelSelector.tsx`
-- [ ] `P10-S1-F` 新建 `apps/web/src/components/ReportBadge.tsx`
+- [x] `P10-S1-A` 修改 `apps/api/app/config.py` 增加模型注册配置（结果：新增 `ANALYSIS_MODELS`、`DEFAULT_ANALYSIS_MODEL`、`REPORT_SCHEDULE_TIME`、`REPORT_MAX_EVENTS` 并完成回退解析）
+- [x] `P10-S1-B` 修改 `apps/api/app/services/analysis.py` 支持按模型路由（结果：`analyze_financial_sources`/`analyze_research_company` 支持 `model_name` 透传，缓存键纳入模型维度）
+- [x] `P10-S1-C` 新建 `apps/api/app/services/scheduled_tasks.py`（结果：实现 `ScheduledReportService`，支持定时生成、强制重跑、规则降级）
+- [x] `P10-S1-D` 修改 `apps/api/app/api.py` 增加模型查询/切换端点（结果：新增 `GET /models`、`POST /models/select`、`GET /reports/latest`、`POST /reports/generate`，并接入定时任务）
+- [x] `P10-S1-E` 新建 `apps/web/src/components/ModelSelector.tsx`（结果：首页可查看当前模型并切换）
+- [x] `P10-S1-F` 新建 `apps/web/src/components/ReportBadge.tsx`（结果：首页可查看报告状态并手动触发重生成）
 
 ### 8.2 验收
 
-- [ ] 至少 2 个模型可切换
-- [ ] 每日报告定时生成稳定
-- [ ] Dashboard 显示最新报告状态
+- [x] 至少 2 个模型可切换（验证：`test_model_and_report_api.py::test_models_list_and_switch` 通过）
+- [x] 每日报告定时生成稳定（验证：`test_model_and_report_api.py::test_reports_generate_and_latest` 通过，含 fallback 分支）
+- [x] Dashboard 显示最新报告状态（验证：`apps/web/tests/model-report-contract.test.mjs` 通过）
+
+阶段10验收命令记录（2026-02-22）：
+1. `uv run --project apps/api pytest -q apps/api/tests/test_analysis_service.py apps/api/tests/test_analysis_tasks_endpoint.py apps/api/tests/test_qa_endpoint.py apps/api/tests/test_daily_news.py apps/api/tests/test_model_and_report_api.py`：通过（`19 passed`）。
+2. `pnpm -C apps/web test:contract`：通过（`12 passed`，包含模型与报告契约测试）。
+3. `pnpm exec eslint . --ext .ts,.tsx --max-warnings=0`：通过（0 warning）。
+4. `uvx pyright --pythonpath apps/api/.venv/bin/python apps/api/app apps/api/tests --outputjson > /tmp/pyright-stage10.json || true`：执行完成。
+5. `uv run --project apps/api python tools/typecheck/check_pyright_baseline.py --input /tmp/pyright-stage10.json --baseline tools/typecheck/pyright-baseline.json --repo-root /Users/qinzheng/Code/market-intel-dashboard`：通过（`new=0`，未引入新增告警）。
 
 ---
 

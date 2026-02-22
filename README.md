@@ -16,13 +16,25 @@
 
 开发计划唯一入口：`docs/todo.md`
 
+### 前端补充更新（2026-02-22）
+
+- 已完成 `shadcn/ui` 增量优化：基础 token、基础组件语义化、Research 页面首批落地。
+- 已完成主要页面筛选/输入区的 `zod + react-hook-form` 升级：`/research`、`/events`、`/news`、`/daily-summary`、`/search`。
+- 已新增前端契约测试覆盖：
+  - Research 页使用共享类型与 `Form/Tabs/Command/Chart`
+  - Events 页使用 `Form + zod` 且具备字段级错误提示
+  - News/Daily Summary/Search 三页使用 `Form + zod`
+  - 非 Research 页面禁止 `slate-*` 硬编码样式类
+
 ## 关键能力（当前可用）
 
 1. Dashboard 摘要、事件流检索与筛选（支持 `origin=live|seed|all`）。
 2. 资产详情链路：`quote/series/chart/profile/events`，支持真实行情优先与回退。
-3. `/qa` 与 `/analysis`：检索增强 + Qwen（有 Key 时），无 Key 时 QA 回退为规则摘要。
-4. `/analysis/tasks` 异步任务与 SSE 流式状态订阅。
-5. `/news/today` 与 `/daily/summary` 支持关注清单默认过滤。
+3. Research 页面工作台：`Form + Tabs + Command + Chart`，并使用共享类型 `ResearchCompanyResponse`。
+4. `/events`、`/news`、`/daily-summary`、`/search` 筛选/提问链路已统一到 `zod + react-hook-form` 强校验。
+5. `/qa` 与 `/analysis`：检索增强 + Qwen（有 Key 时），无 Key 时 QA 回退为规则摘要。
+6. `/analysis/tasks` 异步任务与 SSE 流式状态订阅。
+7. `/news/today` 与 `/daily/summary` 支持关注清单默认过滤。
 
 ## 能力边界（请先了解）
 
@@ -76,6 +88,9 @@ pnpm -C apps/web test:contract
 
 # 前端 lint
 pnpm lint
+
+# 前端生产构建
+pnpm -C apps/web build
 
 # Push 前轻量审查（pre-push 也会自动触发）
 pnpm review:light
@@ -182,6 +197,7 @@ docs              规划、路线图、评估与 TODO
 - 数据源映射：`docs/data-sources.md`
 - HKMA 端点梳理：`docs/hkma-endpoints.md`
 - 架构说明：`docs/architecture.md`
+- 前端增量设计：`docs/plans/2026-02-21-frontend-shadcn-incremental-design.md`
 
 ## 下一步（与 TODO 一致）
 

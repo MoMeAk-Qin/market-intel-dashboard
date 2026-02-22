@@ -20,6 +20,11 @@ from .models import (
     AssetMetric,
     AssetProfile,
     AssetSeriesPoint,
+    CausalAnalyzeRequest,
+    CausalAnalyzeResponse,
+    CorrelationMatrixResponse,
+    CorrelationPreset,
+    DailyReportSnapshot,
     HealthResponse,
     DashboardSummary,
     Event,
@@ -36,20 +41,27 @@ from .models import (
     DailySummaryRequest,
     DailySummaryResponse,
     ResearchResponse,
+    ResearchNewsItem,
+    TechHeatmapResponse,
+    ModelRegistryResponse,
+    ModelSwitchRequest,
+    UnlistedCompany,
+    UnlistedCompanyResponse,
     TimelineLane,
-    EarningsCard,
-    Metric,
     QuotePoint,
     QuoteSeries,
     QuoteSnapshot,
     RefreshReport,
-    ResearchReport,
-    FactCheck,
 )
 from .state import InMemoryStore
-from .services.ingestion import hot_tags, refresh_store, write_vectors
-from .services.analysis import analyze_financial_sources
+from .services.ingestion import hot_tags, refresh_store, set_unlisted_tracker, write_vectors
+from .services.analysis import analyze_financial_sources, analyze_research_company, resolve_analysis_model
+from .services.causal_analyzer import analyze_causal_chain
+from .services.correlation_engine import build_correlation_matrix, normalize_window_days
+from .services.scheduled_tasks import ScheduledReportService
+from .services.tech_heatmap import build_tech_heatmap
 from .services.task_queue import AnalysisTaskQueue
+from .services.unlisted_tracker import UnlistedTracker
 from .services.vector_store import (
     BaseVectorStore,
     EmbeddingsUnavailable,
@@ -62,6 +74,7 @@ from .sources.quotes import (
     fetch_quote_snapshots,
     supports_asset_quotes,
 )
+from .sources.earnings import fetch_earnings_snapshot
 
 ASSET_MARKET_MAP = {item["id"]: item["market"] for item in ASSET_CATALOG}
 _ASSET_PRICE_UNIT = {
@@ -84,14 +97,32 @@ def create_app() -> FastAPI:
     setup_logging(config)
     logger = logging.getLogger("api")
     logger.info("api_startup timezone=%s", config.timezone)
+    active_analysis_model = resolve_analysis_model(config, config.default_analysis_model)
+
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         await refresh_and_index()
         _schedule_jobs(scheduler, config, refresh_and_index)
+        report_hour, report_minute = _parse_clock(config.report_schedule_time)
+        scheduler.add_job(
+            lambda: report_service.generate_daily_report(
+                store.events,
+                model_name=active_analysis_model,
+            ),
+            CronTrigger(hour=report_hour, minute=report_minute),
+            id="daily-report",
+            replace_existing=True,
+        )
+        report_service.generate_daily_report(
+            store.events,
+            model_name=active_analysis_model,
+            force=False,
+        )
         scheduler.start()
         try:
             yield
         finally:
+            set_unlisted_tracker(None)
             scheduler.shutdown(wait=False)
 
     app = FastAPI(title="Market Intel API", version="0.1.0", lifespan=lifespan)
@@ -105,6 +136,8 @@ def create_app() -> FastAPI:
 
     store = InMemoryStore()
     scheduler = AsyncIOScheduler(timezone=ZoneInfo(config.timezone))
+    unlisted_tracker = UnlistedTracker()
+    set_unlisted_tracker(unlisted_tracker)
 
     vector_store: BaseVectorStore | None = None
     vector_store_ready = False
@@ -122,8 +155,19 @@ def create_app() -> FastAPI:
         logger.warning("vector_store_init_failed error=%s", exc)
         vector_store = None
 
+    report_service = ScheduledReportService(
+        config=config,
+        vector_store=vector_store,
+        active_model_getter=lambda: active_analysis_model,
+    )
+
     task_queue = AnalysisTaskQueue(
-        worker=lambda payload: analyze_financial_sources(payload, config, vector_store),
+        worker=lambda payload: analyze_financial_sources(
+            payload,
+            config,
+            vector_store,
+            model_name=active_analysis_model,
+        ),
     )
 
     async def refresh_and_index() -> RefreshReport:
@@ -154,6 +198,39 @@ def create_app() -> FastAPI:
             updated_at=store.updated_at,
             vector_store_enabled=config.enable_vector_store,
             vector_store_ready=vector_store_ready if config.enable_vector_store else False,
+        )
+
+    @app.get("/models", response_model=ModelRegistryResponse)
+    async def list_models() -> ModelRegistryResponse:
+        return ModelRegistryResponse(
+            active_model=active_analysis_model,
+            default_model=config.default_analysis_model,
+            available_models=list(config.analysis_models),
+        )
+
+    @app.post("/models/select", response_model=ModelRegistryResponse)
+    async def select_model(payload: ModelSwitchRequest) -> ModelRegistryResponse:
+        nonlocal active_analysis_model
+        requested = payload.model.strip()
+        if requested not in config.analysis_models:
+            raise HTTPException(status_code=400, detail="Model not registered")
+        active_analysis_model = requested
+        return ModelRegistryResponse(
+            active_model=active_analysis_model,
+            default_model=config.default_analysis_model,
+            available_models=list(config.analysis_models),
+        )
+
+    @app.get("/reports/latest", response_model=DailyReportSnapshot)
+    async def report_latest() -> DailyReportSnapshot:
+        return report_service.get_latest_report()
+
+    @app.post("/reports/generate", response_model=DailyReportSnapshot)
+    async def report_generate(force: bool = False) -> DailyReportSnapshot:
+        return report_service.generate_daily_report(
+            store.events,
+            force=force,
+            model_name=active_analysis_model,
         )
 
     @app.get("/dashboard/summary", response_model=DashboardSummary)
@@ -350,47 +427,92 @@ def create_app() -> FastAPI:
     async def research_company(ticker: str) -> ResearchResponse:
         ticker_upper = ticker.upper()
         related = [event for event in store.events if ticker_upper in event.tickers]
-        top_events = sorted(related, key=lambda item: item.impact, reverse=True)[:3]
-        headline = (
-            top_events[0].headline if top_events else f"{ticker_upper} maintains stable demand"
+        related.sort(key=lambda item: (item.event_time, item.impact), reverse=True)
+        news = [_to_research_news_item(event) for event in related[:6]]
+
+        earnings_snapshot = await fetch_earnings_snapshot(config, ticker_upper)
+        quote = earnings_snapshot.quote if earnings_snapshot else None
+        earnings_card = earnings_snapshot.earnings_card if earnings_snapshot else None
+
+        analysis = analyze_research_company(
+            ticker=ticker_upper,
+            news=news,
+            earnings_card=earnings_card,
+            config=config,
+            vector_store=vector_store,
+            model_name=active_analysis_model,
         )
-        earnings_card = EarningsCard(
-            headline=headline,
-            eps=Metric(value=2.18, yoy=0.12),
-            revenue=Metric(value=32.4, yoy=0.08),
-            guidance="FY outlook held, with upside skew into 2H.",
-            sentiment="Stable with a constructive tilt",
-        )
-        reports = [
-            ResearchReport(
-                title=f"{ticker_upper} tactical update",
-                publisher="Crown Research",
-                date=date.today(),
-                summary="Channel momentum remains steady, with valuation slightly below the historical midpoint.",
-                rating="Overweight",
-            ),
-            ResearchReport(
-                title=f"{ticker_upper} supply chain check",
-                publisher="Atlas Insight",
-                date=date.today() - timedelta(days=1),
-                summary="Order visibility improves, while cost pressure remains a key watch item.",
-                rating="Neutral",
-            ),
-        ]
-        fact_check = [
-            FactCheck(
-                statement="Overseas demand is recovering and supports pricing power.",
-                verdict="Partially supported",
-                evidence=(
-                    "Recent channel data shows modest improvement, though trends vary by region."
-                ),
-            )
-        ]
+
+        company_type: Literal["listed", "unlisted"] = "listed"
+        if earnings_snapshot is None and not news:
+            company_type = "unlisted"
+
+        source_type: Literal["live", "fallback"] = "live"
+        if earnings_snapshot is None or analysis.is_fallback:
+            source_type = "fallback"
+
+        note: str | None = None
+        if company_type == "unlisted":
+            note = "未识别到可用上市公司财报与相关新闻，已返回占位结果。"
+        elif earnings_snapshot is None:
+            note = "未获取到实时财报数据，已回退为新闻与规则分析。"
+        elif analysis.is_fallback:
+            note = "分析链路降级，当前回答由规则引擎生成。"
+
+        updated_at = store.updated_at or datetime.now(timezone.utc)
+
         return ResearchResponse(
             ticker=ticker_upper,
+            company_type=company_type,
+            source_type=source_type,
+            updated_at=updated_at,
+            quote=quote,
             earnings_card=earnings_card,
-            reports=reports,
-            fact_check=fact_check,
+            news=news,
+            analysis=analysis,
+            note=note,
+        )
+
+    @app.get("/unlisted/companies", response_model=list[UnlistedCompany])
+    async def list_unlisted_companies() -> list[UnlistedCompany]:
+        return unlisted_tracker.list_companies()
+
+    @app.get("/unlisted/companies/{company_id}", response_model=UnlistedCompanyResponse)
+    async def get_unlisted_company(company_id: str) -> UnlistedCompanyResponse:
+        detail = unlisted_tracker.get_company(company_id)
+        if detail is None:
+            raise HTTPException(status_code=404, detail="Unlisted company not found")
+        return detail
+
+    @app.get("/tech/heatmap", response_model=TechHeatmapResponse)
+    async def tech_heatmap(limit: int = 24) -> TechHeatmapResponse:
+        safe_limit = max(5, min(limit, 50))
+        return build_tech_heatmap(
+            events=store.events,
+            quotes=store.quotes,
+            config=config,
+            limit=safe_limit,
+        )
+
+    @app.get("/correlation/matrix", response_model=CorrelationMatrixResponse)
+    async def correlation_matrix(
+        preset: CorrelationPreset = Query(default="A"),
+        window: int = Query(default=30, ge=1, le=365),
+    ) -> CorrelationMatrixResponse:
+        window_days = normalize_window_days(window, allowed=config.correlation_windows)
+        return build_correlation_matrix(
+            quotes=store.quotes,
+            config=config,
+            preset=preset,
+            window_days=window_days,
+        )
+
+    @app.post("/correlation/analyze", response_model=CausalAnalyzeResponse)
+    async def correlation_analyze(payload: CausalAnalyzeRequest) -> CausalAnalyzeResponse:
+        return analyze_causal_chain(
+            events=store.events,
+            payload=payload,
+            config=config,
         )
 
     @app.post("/qa", response_model=QAResponse)
@@ -412,7 +534,12 @@ def create_app() -> FastAPI:
                 top_k=config.analysis_top_k,
             )
             try:
-                analysis = analyze_financial_sources(analysis_payload, config, vector_store)
+                analysis = analyze_financial_sources(
+                    analysis_payload,
+                    config,
+                    vector_store,
+                    model_name=active_analysis_model,
+                )
                 answer = analysis.answer.strip()
                 if answer:
                     return QAResponse(
@@ -432,7 +559,12 @@ def create_app() -> FastAPI:
     @app.post("/analysis", response_model=AnalysisResponse)
     async def analyze(payload: AnalysisRequest) -> AnalysisResponse:
         try:
-            return analyze_financial_sources(payload, config, vector_store)
+            return analyze_financial_sources(
+                payload,
+                config,
+                vector_store,
+                model_name=active_analysis_model,
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
@@ -528,7 +660,7 @@ def create_app() -> FastAPI:
             return DailySummaryResponse(
                 date=today,
                 answer="今日暂无符合条件的新闻。",
-                model=config.qwen_model,
+                model=active_analysis_model,
                 total_news=0,
                 usage=None,
                 sources=[],
@@ -552,7 +684,12 @@ def create_app() -> FastAPI:
             top_k=payload.top_k,
         )
         try:
-            analysis = analyze_financial_sources(analysis_payload, config, vector_store)
+            analysis = analyze_financial_sources(
+                analysis_payload,
+                config,
+                vector_store,
+                model_name=active_analysis_model,
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
@@ -950,6 +1087,23 @@ def _filter_today_news(
         filtered.append(event)
 
     return sorted(filtered, key=lambda item: _to_tz(item.event_time, tz), reverse=True)
+
+
+def _to_research_news_item(event: Event) -> ResearchNewsItem:
+    first_evidence = event.evidence[0] if event.evidence else None
+    return ResearchNewsItem(
+        event_id=event.event_id,
+        headline=event.headline,
+        summary=event.summary,
+        publisher=event.publisher,
+        event_time=event.event_time,
+        event_type=event.event_type,
+        impact=event.impact,
+        confidence=event.confidence,
+        source_type=event.source_type,
+        source_url=first_evidence.source_url if first_evidence else "",
+        quote_id=first_evidence.quote_id if first_evidence else None,
+    )
 
 
 def _collect_evidence(items: list[Event], *, limit: int) -> list[EventEvidence]:

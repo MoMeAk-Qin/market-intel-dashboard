@@ -2,10 +2,22 @@ import type {
   AnalysisRequest,
   AnalysisTaskInfo,
   AnalysisTaskList,
+  CausalAnalyzeRequest,
+  CausalAnalyzeResponse,
+  CorrelationMatrixResponse,
+  CorrelationPreset,
+  CorrelationWindowDays,
+  DailyReportSnapshot,
   DailyNewsResponse,
   DailySummaryRequest,
   DailySummaryResponse,
   HealthResponse,
+  ModelRegistryResponse,
+  ModelSwitchRequest,
+  ResearchCompanyResponse,
+  TechHeatmapResponse,
+  UnlistedCompany,
+  UnlistedCompanyResponse,
 } from '@market/shared';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
@@ -76,3 +88,35 @@ export const getAnalysisTask = (taskId: string) =>
 
 export const listAnalysisTasks = (limit = 20) =>
   apiGet<AnalysisTaskList>('/analysis/tasks', { limit });
+
+export const getResearchCompany = (ticker: string) =>
+  apiGet<ResearchCompanyResponse>(`/research/company/${ticker}`);
+
+export const getUnlistedCompanies = () =>
+  apiGet<UnlistedCompany[]>('/unlisted/companies');
+
+export const getUnlistedCompany = (companyId: string) =>
+  apiGet<UnlistedCompanyResponse>(`/unlisted/companies/${companyId}`);
+
+export const getTechHeatmap = (params: { limit?: number } = {}) =>
+  apiGet<TechHeatmapResponse>('/tech/heatmap', params);
+
+export const getCorrelationMatrix = (params: {
+  preset?: CorrelationPreset;
+  window?: CorrelationWindowDays;
+}) => apiGet<CorrelationMatrixResponse>('/correlation/matrix', params);
+
+export const analyzeCorrelation = (payload: CausalAnalyzeRequest) =>
+  apiPost<CausalAnalyzeResponse, CausalAnalyzeRequest>('/correlation/analyze', payload);
+
+export const getModelRegistry = () =>
+  apiGet<ModelRegistryResponse>('/models');
+
+export const selectModel = (payload: ModelSwitchRequest) =>
+  apiPost<ModelRegistryResponse, ModelSwitchRequest>('/models/select', payload);
+
+export const getLatestReport = () =>
+  apiGet<DailyReportSnapshot>('/reports/latest');
+
+export const generateDailyReport = (force = false) =>
+  apiPost<DailyReportSnapshot, Record<string, never>>(`/reports/generate?force=${force ? 'true' : 'false'}`, {});

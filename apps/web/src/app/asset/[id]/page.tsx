@@ -96,15 +96,15 @@ export default function AssetDetailPage() {
           ) : null}
         </div>
         <h1 className="text-3xl font-semibold">{assetId}</h1>
-        <p className="text-sm text-slate-600">Track price action and recent catalysts in one view.</p>
+        <p className="text-sm text-muted-foreground">Track price action and recent catalysts in one view.</p>
         {profileLoading ? (
           <Skeleton className="mt-2 h-6 w-56" />
         ) : profileError || !profileData ? (
-          <p className="mt-2 text-sm text-slate-500">Unable to load quote snapshot.</p>
+          <p className="mt-2 text-sm text-muted-foreground">Unable to load quote snapshot.</p>
         ) : (
           <div className="mt-2 space-y-2">
             <div className="flex flex-wrap items-center gap-3">
-              <p className="text-2xl font-semibold text-slate-900">{formatPrice(profileData.quote.price)}</p>
+              <p className="text-2xl font-semibold text-foreground">{formatPrice(profileData.quote.price)}</p>
               <p
                 className={
                   profileData.quote.change_pct && profileData.quote.change_pct < 0
@@ -114,7 +114,7 @@ export default function AssetDetailPage() {
               >
                 {pctFormatter.format(profileData.quote.change_pct ?? 0)}%
               </p>
-              <p className="text-xs text-slate-500">{formatApiDateTime(profileData.quote.as_of)}</p>
+              <p className="text-xs text-muted-foreground">{formatApiDateTime(profileData.quote.as_of)}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               {profileData.metrics.map((item) => (
@@ -154,22 +154,28 @@ export default function AssetDetailPage() {
           {profileLoading ? (
             <Skeleton className="h-full" />
           ) : profileError || !profileData ? (
-            <p className="text-sm text-slate-500">Unable to load chart.</p>
+            <p className="text-sm text-muted-foreground">Unable to load chart.</p>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartPoints} margin={{ left: 12, right: 12 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="label" tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="label" tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" />
                 <YAxis
                   tick={{ fontSize: 12 }}
-                  stroke="#94a3b8"
+                  stroke="hsl(var(--muted-foreground))"
                   tickFormatter={(value) => formatPrice(Number(value))}
                 />
                 <Tooltip
                   formatter={(value) => formatPrice(Number(value))}
                   labelFormatter={(label) => String(label)}
+                  contentStyle={{
+                    borderColor: 'hsl(var(--border))',
+                    borderRadius: '0.5rem',
+                    background: 'hsl(var(--popover))',
+                    color: 'hsl(var(--popover-foreground))',
+                  }}
                 />
-                <Line type="monotone" dataKey="value" stroke="#0f172a" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="value" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           )}
@@ -184,20 +190,20 @@ export default function AssetDetailPage() {
           {profileLoading ? (
             Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-16" />)
           ) : profileError || !profileData ? (
-            <p className="text-sm text-slate-500">Unable to load events.</p>
+            <p className="text-sm text-muted-foreground">Unable to load events.</p>
           ) : profileData.recent_events.length === 0 ? (
-            <p className="text-sm text-slate-500">No recent events for this asset.</p>
+            <p className="text-sm text-muted-foreground">No recent events for this asset.</p>
           ) : (
             profileData.recent_events.map((event) => (
-              <div key={event.event_id} className="rounded-md border border-slate-100 p-3">
+              <div key={event.event_id} className="rounded-md border border-border bg-background/20 p-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="secondary">{event.event_type}</Badge>
                   <Badge variant={event.stance === 'positive' ? 'default' : 'secondary'}>
                     {event.stance}
                   </Badge>
                 </div>
-                <p className="mt-2 text-sm font-semibold text-slate-900">{event.headline}</p>
-                <p className="text-xs text-slate-500">{event.publisher}</p>
+                <p className="mt-2 text-sm font-semibold text-foreground">{event.headline}</p>
+                <p className="text-xs text-muted-foreground">{event.publisher}</p>
               </div>
             ))
           )}

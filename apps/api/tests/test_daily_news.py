@@ -138,10 +138,10 @@ def test_daily_summary_calls_analysis(monkeypatch) -> None:
     with _prepare_app(monkeypatch, [today_event]) as client:
         import app.api as api_module
 
-        def _fake_analyze(payload, config, vector_store=None) -> AnalysisResponse:
+        def _fake_analyze(payload, config, vector_store=None, model_name=None) -> AnalysisResponse:
             return AnalysisResponse(
                 answer="OK",
-                model="qwen3-max",
+                model=model_name or "qwen3-max",
                 usage=None,
                 sources=[],
             )
@@ -205,10 +205,10 @@ def test_daily_summary_applies_watchlist_keywords(monkeypatch) -> None:
     ) as client:
         import app.api as api_module
 
-        def _fake_analyze(payload, config, vector_store=None) -> AnalysisResponse:
+        def _fake_analyze(payload, config, vector_store=None, model_name=None) -> AnalysisResponse:
             return AnalysisResponse(
                 answer="OK",
-                model="qwen3-max",
+                model=model_name or "qwen3-max",
                 usage=None,
                 sources=[],
             )

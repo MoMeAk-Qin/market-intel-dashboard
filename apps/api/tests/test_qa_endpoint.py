@@ -79,10 +79,10 @@ def test_qa_uses_analysis_chain(monkeypatch) -> None:
     with _prepare_app(monkeypatch, events, dashscope_key="test-key") as client:
         import app.api as api_module
 
-        def _fake_analyze(payload, config, vector_store=None) -> AnalysisResponse:
+        def _fake_analyze(payload, config, vector_store=None, model_name=None) -> AnalysisResponse:
             return AnalysisResponse(
                 answer="分析主路径命中",
-                model="qwen3-max",
+                model=model_name or "qwen3-max",
                 usage=None,
                 sources=[events[0].evidence[0]],
             )
@@ -127,4 +127,3 @@ def test_qa_empty_events_returns_empty_message(monkeypatch) -> None:
         payload = resp.json()
         assert payload["answer"] == "当前暂无可用于回答的问题事件数据。"
         assert payload["evidence"] == []
-

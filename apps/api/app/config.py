@@ -30,6 +30,21 @@ def _get_map(value: str | None) -> dict[str, str]:
     return mapping
 
 
+def _get_int_tuple(value: str | None, *, defaults: tuple[int, ...]) -> tuple[int, ...]:
+    if not value:
+        return defaults
+    items: list[int] = []
+    for part in value.split(","):
+        text = part.strip()
+        if not text:
+            continue
+        try:
+            items.append(int(text))
+        except ValueError:
+            continue
+    return tuple(items) or defaults
+
+
 @dataclass(frozen=True)
 class AppConfig:
     api_port: int
@@ -82,6 +97,8 @@ class AppConfig:
     qwen_model: str
     qwen_temperature: float
     qwen_max_tokens: int
+    analysis_models: tuple[str, ...]
+    default_analysis_model: str
     enable_vector_store: bool
     enable_pgvector: bool
     vector_backend: Literal["chroma", "simple", "pgvector"]
@@ -96,9 +113,26 @@ class AppConfig:
     dashscope_embeddings_model: str
     analysis_top_k: int
     analysis_cache_ttl_seconds: int
+    tech_watchlist_us: tuple[str, ...]
+    tech_watchlist_hk: tuple[str, ...]
+    tech_watchlist_unlisted: tuple[str, ...]
+    correlation_macro_core: tuple[str, ...]
+    correlation_ai_supply_chain: tuple[str, ...]
+    correlation_cross_border_tech: tuple[str, ...]
+    correlation_windows: tuple[int, ...]
+    tech_heat_alert_threshold: float
+    report_schedule_time: str
+    report_max_events: int
 
     @classmethod
     def from_env(cls) -> "AppConfig":
+        qwen_model = os.getenv("QWEN_MODEL", "qwen3-max")
+        analysis_models = _get_list(os.getenv("ANALYSIS_MODELS", f"{qwen_model},qwen-plus")) or (qwen_model,)
+        default_analysis_model = _resolve_default_model(
+            preferred=os.getenv("DEFAULT_ANALYSIS_MODEL"),
+            models=analysis_models,
+            fallback=qwen_model,
+        )
         return cls(
             api_port=int(os.getenv("API_PORT", "4000")),
             cors_origin=os.getenv("CORS_ORIGIN", "http://localhost:3000"),
@@ -173,9 +207,11 @@ class AppConfig:
                 "QWEN_BASE_URL",
                 "https://dashscope.aliyuncs.com/compatible-mode/v1",
             ),
-            qwen_model=os.getenv("QWEN_MODEL", "qwen3-max"),
+            qwen_model=qwen_model,
             qwen_temperature=float(os.getenv("QWEN_TEMPERATURE", "0.2")),
             qwen_max_tokens=int(os.getenv("QWEN_MAX_TOKENS", "512")),
+            analysis_models=analysis_models,
+            default_analysis_model=default_analysis_model,
             enable_vector_store=_get_bool(os.getenv("ENABLE_VECTOR_STORE"), True),
             enable_pgvector=_get_bool(os.getenv("ENABLE_PGVECTOR"), False),
             vector_backend=_get_vector_backend(
@@ -199,6 +235,46 @@ class AppConfig:
             dashscope_embeddings_model=os.getenv("DASHSCOPE_EMBEDDINGS_MODEL", "text-embedding-v4"),
             analysis_top_k=int(os.getenv("ANALYSIS_TOP_K", "6")),
             analysis_cache_ttl_seconds=int(os.getenv("ANALYSIS_CACHE_TTL_SECONDS", "86400")),
+            tech_watchlist_us=_get_list(
+                os.getenv(
+                    "TECH_WATCHLIST_US",
+                    "NVDA,MSFT,AAPL,AMZN,META,GOOGL,TSLA,AMD,AVGO,ARM,PLTR,CRM",
+                )
+            ),
+            tech_watchlist_hk=_get_list(
+                os.getenv(
+                    "TECH_WATCHLIST_HK",
+                    "0700.HK,9988.HK,3690.HK,9618.HK,9866.HK,1810.HK,2015.HK,1024.HK",
+                )
+            ),
+            tech_watchlist_unlisted=_get_list(
+                os.getenv("TECH_WATCHLIST_UNLISTED", "MINIMAX")
+            ),
+            correlation_macro_core=_get_list(
+                os.getenv(
+                    "CORRELATION_MACRO_CORE",
+                    "DXY,US10Y,US02Y,XAUUSD,NASDAQ,0700.HK",
+                )
+            ),
+            correlation_ai_supply_chain=_get_list(
+                os.getenv(
+                    "CORRELATION_AI_SUPPLY_CHAIN",
+                    "NVDA,AMD,AVGO,MSFT,GOOGL,NASDAQ,DXY",
+                )
+            ),
+            correlation_cross_border_tech=_get_list(
+                os.getenv(
+                    "CORRELATION_CROSS_BORDER_TECH",
+                    "NASDAQ,0700.HK,DXY,US10Y,XAUUSD",
+                )
+            ),
+            correlation_windows=_get_int_tuple(
+                os.getenv("CORRELATION_WINDOWS"),
+                defaults=(7, 30, 90),
+            ),
+            tech_heat_alert_threshold=float(os.getenv("TECH_HEAT_ALERT_THRESHOLD", "70")),
+            report_schedule_time=os.getenv("REPORT_SCHEDULE_TIME", "17:00"),
+            report_max_events=int(os.getenv("REPORT_MAX_EVENTS", "16")),
         )
 
 
@@ -224,3 +300,16 @@ def _get_pg_dsn(pg_dsn: str | None, pgvector_dsn: str | None) -> str:
     if pgvector_dsn and pgvector_dsn.strip():
         return pgvector_dsn.strip()
     return ""
+
+
+def _resolve_default_model(*, preferred: str | None, models: tuple[str, ...], fallback: str) -> str:
+    normalized = [item for item in models if item.strip()]
+    if preferred and preferred.strip():
+        preferred_name = preferred.strip()
+        if preferred_name in normalized:
+            return preferred_name
+    if normalized:
+        if fallback in normalized:
+            return fallback
+        return normalized[0]
+    return fallback

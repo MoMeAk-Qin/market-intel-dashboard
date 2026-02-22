@@ -31,11 +31,11 @@ def _prepare_app(monkeypatch):
             source_errors=[],
         )
 
-    def _fake_analyze(payload, config, vector_store=None) -> AnalysisResponse:
+    def _fake_analyze(payload, config, vector_store=None, model_name=None) -> AnalysisResponse:
         time.sleep(0.02)
         return AnalysisResponse(
             answer=f"task:{payload.question}",
-            model="qwen3-max",
+            model=model_name or "qwen3-max",
             usage=None,
             sources=[],
         )

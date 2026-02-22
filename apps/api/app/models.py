@@ -266,22 +266,157 @@ class EarningsCard(BaseModel):
     sentiment: str
 
 
-class ResearchReport(BaseModel):
-    title: str
-    publisher: str
-    date: date
+ResearchSourceType = Literal["live", "fallback"]
+ResearchCompanyType = Literal["listed", "unlisted"]
+UnlistedSourceType = Literal["seed", "live"]
+UnlistedCompanyStatus = Literal["unlisted"]
+
+
+class ResearchNewsItem(BaseModel):
+    event_id: str
+    headline: str
     summary: str
-    rating: str
+    publisher: str
+    event_time: datetime
+    event_type: EventType
+    impact: int = Field(ge=0, le=100)
+    confidence: float = Field(ge=0, le=1)
+    source_type: EventSourceType
+    source_url: str
+    quote_id: str | None = None
 
 
-class FactCheck(BaseModel):
-    statement: str
-    verdict: str
-    evidence: str
+class ResearchAnalysisBlock(BaseModel):
+    answer: str
+    model: str
+    is_fallback: bool = False
+    sources: list[EventEvidence] = Field(default_factory=list)
 
 
 class ResearchResponse(BaseModel):
     ticker: str
-    earnings_card: EarningsCard
-    reports: list[ResearchReport]
-    fact_check: list[FactCheck]
+    company_type: ResearchCompanyType
+    source_type: ResearchSourceType
+    updated_at: datetime
+    quote: QuoteSnapshot | None = None
+    earnings_card: EarningsCard | None = None
+    news: list[ResearchNewsItem] = Field(default_factory=list)
+    analysis: ResearchAnalysisBlock
+    note: str | None = None
+
+
+class UnlistedCompany(BaseModel):
+    company_id: str
+    name: str
+    status: UnlistedCompanyStatus = "unlisted"
+    core_products: list[str] = Field(default_factory=list)
+    related_concepts: list[str] = Field(default_factory=list)
+    description: str
+    source_type: UnlistedSourceType = "seed"
+    updated_at: datetime
+
+
+class UnlistedEvent(BaseModel):
+    company_id: str
+    event_id: str
+    event_time: datetime
+    headline: str
+    summary: str
+    publisher: str
+    event_type: EventType
+    impact: int = Field(ge=0, le=100)
+    confidence: float = Field(ge=0, le=1)
+    source_type: UnlistedSourceType
+    source_url: str
+    quote_id: str | None = None
+
+
+class UnlistedCompanyResponse(BaseModel):
+    company: UnlistedCompany
+    timeline: list[UnlistedEvent] = Field(default_factory=list)
+    total_events: int = Field(default=0, ge=0)
+    updated_at: datetime
+    note: str | None = None
+
+
+CorrelationPreset = Literal["A", "B", "C"]
+CorrelationWindowDays = Literal[7, 30, 90]
+HeatLevel = Literal["low", "medium", "high"]
+HeatSourceType = Literal["live", "seed", "mixed"]
+
+
+class TechHeatItem(BaseModel):
+    asset_id: str
+    market: str
+    latest_price: float | None = None
+    change_pct: float | None = None
+    mentions_7d: int = Field(ge=0)
+    avg_impact: float = Field(ge=0, le=100)
+    heat_score: float = Field(ge=0, le=100)
+    level: HeatLevel
+    source_type: HeatSourceType
+
+
+class TechHeatmapResponse(BaseModel):
+    generated_at: datetime
+    threshold: float = Field(ge=0, le=100)
+    items: list[TechHeatItem] = Field(default_factory=list)
+
+
+class CorrelationMatrixResponse(BaseModel):
+    preset: CorrelationPreset
+    window_days: CorrelationWindowDays
+    assets: list[str] = Field(default_factory=list)
+    matrix: list[list[float]] = Field(default_factory=list)
+    fallback_assets: list[str] = Field(default_factory=list)
+    updated_at: datetime
+    note: str | None = None
+
+
+class CausalAnalyzeRequest(BaseModel):
+    event_id: str | None = None
+    query: str | None = None
+    max_depth: int = Field(default=3, ge=2, le=5)
+
+
+class CausalNode(BaseModel):
+    level: int = Field(ge=0, le=5)
+    label: str
+    detail: str
+    related_assets: list[str] = Field(default_factory=list)
+    confidence: float = Field(ge=0, le=1)
+    evidence: list[EventEvidence] = Field(default_factory=list)
+
+
+class CausalAnalyzeResponse(BaseModel):
+    event_id: str | None = None
+    source_type: HeatSourceType
+    summary: str
+    nodes: list[CausalNode] = Field(default_factory=list)
+    generated_at: datetime
+
+
+ReportStatus = Literal["idle", "running", "completed", "failed"]
+ReportSourceType = Literal["live", "fallback"]
+
+
+class ModelRegistryResponse(BaseModel):
+    active_model: str
+    default_model: str
+    available_models: list[str] = Field(default_factory=list)
+
+
+class ModelSwitchRequest(BaseModel):
+    model: str
+
+
+class DailyReportSnapshot(BaseModel):
+    report_id: str
+    target_date: date
+    generated_at: datetime | None = None
+    status: ReportStatus
+    model: str
+    source_type: ReportSourceType
+    summary: str | None = None
+    total_events: int = Field(default=0, ge=0)
+    error: str | None = None

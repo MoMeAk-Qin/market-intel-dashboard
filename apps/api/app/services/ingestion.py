@@ -21,9 +21,22 @@ from ..sources.treasury import fetch_treasury_events
 from .seed import HOT_TAGS, build_seed_events
 
 if TYPE_CHECKING:
+    from .unlisted_tracker import UnlistedTracker
     from .vector_store import BaseVectorStore
 
 logger = logging.getLogger("ingestion")
+_unlisted_tracker: "UnlistedTracker | None" = None
+
+
+def set_unlisted_tracker(tracker: "UnlistedTracker | None") -> None:
+    global _unlisted_tracker
+    _unlisted_tracker = tracker
+
+
+def sync_unlisted_from_events(events: Iterable[Event]) -> int:
+    if _unlisted_tracker is None:
+        return 0
+    return _unlisted_tracker.sync_from_events(events)
 
 
 async def refresh_store(store: InMemoryStore, config: AppConfig) -> RefreshReport:
@@ -74,6 +87,9 @@ async def refresh_store(store: InMemoryStore, config: AppConfig) -> RefreshRepor
 
     events = dedupe_events([*live_events, *seeded_events])
     store.replace_events(events)
+    synced_count = sync_unlisted_from_events(events)
+    if synced_count > 0:
+        logger.info("unlisted_synced count=%s", synced_count)
     if config.enable_market_quotes:
         try:
             live_quotes = await fetch_quote_snapshots(config)
